@@ -1,0 +1,42 @@
+# Segredos / ambiente
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependências
+node_modules/
+.pnp/
+vendor/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Build / saída
+dist/
+build/
+out/
+.next/
+target/
+*.egg-info/
+
+# Logs e temporários
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# Banco local / dados
+*.sqlite
+*.sqlite3
+*.db
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
