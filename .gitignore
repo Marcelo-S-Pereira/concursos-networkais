@@ -1,41 +1,85 @@
-# Segredos / ambiente
+# ==========================================================================
+# REGRA DURA DO PROJETO: base de dados e chaves de API NUNCA vão para o git.
+# Antes de qualquer commit, conferir com: git status && git diff --cached
+# ==========================================================================
+
+# --- Segredos / chaves de API (Together AI e demais IAs) ---
 .env
 .env.*
 !.env.example
+secrets/
+.secrets/
+*secret*
+*credential*
+*apikey*
+*api_key*
+*_key.json
+together*.json
+service-account*.json
 *.pem
 *.key
+*.p12
+*.pfx
 
-# Dependências
-node_modules/
-.pnp/
-vendor/
+# --- Base de dados (nada de dados sai daqui) ---
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.dump
+*.bak
+*.mdb
+data/
+dados/
+database/
+db_data/
+postgres_data/
+pgdata/
+dumps/
+backups/
+uploads/
+media/
+
+# --- Python ---
 __pycache__/
 *.py[cod]
+*$py.class
 .venv/
 venv/
 env/
-
-# Build / saída
-dist/
-build/
-out/
-.next/
-target/
+ENV/
 *.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.ipynb_checkpoints/
 
-# Logs e temporários
+# --- Frontend ---
+node_modules/
+.next/
+out/
+.nuxt/
+.svelte-kit/
+frontend/dist/
+frontend/build/
+.parcel-cache/
+.vite/
+
+# --- Logs e temporários ---
 *.log
 logs/
 tmp/
 temp/
 *.tmp
+*.pid
 
-# Banco local / dados
-*.sqlite
-*.sqlite3
-*.db
-
-# Editor / SO
+# --- Editor / SO ---
 .vscode/
 .idea/
 .DS_Store
