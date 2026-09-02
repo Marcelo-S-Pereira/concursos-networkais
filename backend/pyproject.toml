@@ -1,0 +1,40 @@
+[project]
+name = "app-concursos-backend"
+version = "0.1.0"
+description = "Backend da plataforma de concursos"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]",
+    "sqlalchemy==2.0.52",
+    "alembic==1.19.1",
+    "psycopg[binary]",
+    "pydantic[email]",
+    "pydantic-settings",
+    "python-dotenv",
+    "httpx",
+    "cryptography",
+    "passlib[bcrypt]",
+    "python-multipart",
+    "itsdangerous",
+]
+
+[project.optional-dependencies]
+dev = ["ruff", "pytest"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+# B008: `Depends(...)` no valor padrão do argumento é a forma idiomática de
+# injeção do FastAPI, não um bug. Ignorar aqui é decisão consciente, não
+# preguiça - a regra existe para defaults mutáveis comuns, que continuam pegos.
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Sem isso o pytest não acha o pacote `app` (a raiz do backend não entra no
+# sys.path sozinha quando os testes vivem em tests/).
+pythonpath = ["."]
