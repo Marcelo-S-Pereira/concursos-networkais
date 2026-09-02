@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import Acesso from "./Acesso"
+import Revisao from "./Revisao"
 import { api, type Health, type Usuario } from "./api"
 
 export default function App() {
@@ -21,11 +22,7 @@ export default function App() {
 }
 
 function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
-    const [health, setHealth] = useState<Health | null>(null)
-
-    useEffect(() => {
-        api.health().then(setHealth).catch(() => setHealth(null))
-    }, [])
+    const [aba, setAba] = useState<"revisao" | "estado">("revisao")
 
     async function sair() {
         await api.logout().catch(() => {})
@@ -33,27 +30,40 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
     }
 
     return (
-        <main className="tela">
+        <main className="tela larga">
             <header className="topo">
                 <div>
                     <h1>APP Concursos</h1>
-                    <p className="sub">{usuario.nome} · {usuario.email}</p>
+                    <p className="sub">{usuario.nome}</p>
                 </div>
                 <button className="secundario" onClick={sair}>Sair</button>
             </header>
 
-            <section className="cartao">
-                <h2>Estado do sistema</h2>
-                {!health && <p className="neutro">Consultando…</p>}
-                {health && (
-                    <ul className="lista">
-                        <Linha rotulo="API" ok valor="respondendo" />
-                        <Linha rotulo="PostgreSQL" ok={!!health.database} valor={health.database ? "conectado" : "fora"} />
-                        <Linha rotulo="pgvector" ok={!!health.pgvector} valor={health.pgvector ?? "ausente"} />
-                    </ul>
-                )}
-            </section>
+            <nav className="abas">
+                <button className={aba === "revisao" ? "ativa" : ""} onClick={() => setAba("revisao")}>Revisão de questões</button>
+                <button className={aba === "estado" ? "ativa" : ""} onClick={() => setAba("estado")}>Estado</button>
+            </nav>
+
+            {aba === "revisao" ? <Revisao /> : <Estado />}
         </main>
+    )
+}
+
+function Estado() {
+    const [health, setHealth] = useState<Health | null>(null)
+    useEffect(() => { api.health().then(setHealth).catch(() => setHealth(null)) }, [])
+    return (
+        <section className="cartao">
+            <h2>Estado do sistema</h2>
+            {!health && <p className="neutro">Consultando…</p>}
+            {health && (
+                <ul className="lista">
+                    <Linha rotulo="API" ok valor="respondendo" />
+                    <Linha rotulo="PostgreSQL" ok={!!health.database} valor={health.database ? "conectado" : "fora"} />
+                    <Linha rotulo="pgvector" ok={!!health.pgvector} valor={health.pgvector ?? "ausente"} />
+                </ul>
+            )}
+        </section>
     )
 }
 

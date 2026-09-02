@@ -107,3 +107,45 @@ button {
 }
 button:disabled { opacity: .6; cursor: default; }
 button.secundario { background: transparent; color: var(--suave); border: 1px solid var(--borda); padding: 8px 14px; }
+
+/* --- revisão de questões --- */
+.tela.larga { max-width: 820px; }
+.abas { margin-bottom: 20px; }
+
+.seletor-exame { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.seletor-exame button { background: var(--cartao); border: 1px solid var(--borda); color: var(--texto); }
+.seletor-exame button.ativa { border-color: var(--texto); }
+.badge { background: var(--borda); border-radius: 20px; padding: 1px 8px; font-size: .75rem; margin-left: 6px; }
+
+.filtro { display: flex; align-items: center; gap: 8px; color: var(--suave); margin-bottom: 14px; font-size: .9rem; }
+.filtro input { width: auto; }
+
+.questao {
+    background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px;
+    padding: 18px; margin-bottom: 16px;
+}
+.questao header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.questao .disc { color: var(--suave); font-size: .85rem; }
+.conf { margin-left: auto; font-size: .8rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; color: #fff; }
+.conf.ok { background: var(--ok); }
+.conf.medio { background: #b8860b; }
+.conf.baixo { background: var(--falha); }
+.revisada { color: var(--ok); font-size: .8rem; }
+.aviso { color: #b8860b; font-size: .85rem; margin: 4px 0; }
+.figura { display: block; max-width: 100%; border: 1px solid var(--borda); border-radius: 8px; margin: 8px 0; }
+
+.campo { display: block; color: var(--suave); font-size: .85rem; margin: 10px 0; }
+textarea { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--borda); border-radius: 8px; background: var(--fundo); color: var(--texto); resize: vertical; }
+
+.alternativas-edit { display: grid; gap: 8px; margin: 8px 0; }
+.alt { display: flex; align-items: center; gap: 8px; }
+.alt .marca {
+    flex: 0 0 34px; height: 34px; min-height: 34px; padding: 0; border-radius: 8px;
+    background: var(--fundo); color: var(--texto); border: 1px solid var(--borda); font-weight: 700;
+}
+.alt.correta .marca { background: var(--ok); color: #fff; border-color: var(--ok); }
+.alt input { flex: 1; }
+.gab-linha { color: var(--suave); font-size: .9rem; margin: 6px 0 12px; }
+
+.acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.acoes button { flex: 0 0 auto; }

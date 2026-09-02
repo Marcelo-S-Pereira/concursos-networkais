@@ -38,7 +38,24 @@ async function pedir<T>(caminho: string, init?: RequestInit): Promise<T> {
 
 export type DadosCadastro = { nome: string; email: string; cpf: string; telefone: string }
 
+export type Choice = { letra: string; texto: string }
+export type Questao = {
+    id: number; numero: number; disciplina: string; enunciado: string
+    gabarito: string | null; tem_figura: boolean; confianca: number; aviso: string
+    revisada: boolean; descartada: boolean; alternativas: Choice[]
+}
+export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
+export type PatchQuestao = Partial<{
+    enunciado: string; gabarito: string; disciplina: string
+    alternativas: Record<string, string>; revisada: boolean; descartada: boolean
+}>
+
 export const api = {
+    exames: () => pedir<Exame[]>("/exames"),
+    questoes: (examId: number) => pedir<Questao[]>(`/exames/${examId}/questoes`),
+    editarQuestao: (qid: number, dados: PatchQuestao) =>
+        pedir<Questao>(`/exames/questoes/${qid}`, { method: "PATCH", body: JSON.stringify(dados) }),
+    figuraUrl: (qid: number) => `/api/v1/exames/questoes/${qid}/figura`,
     me: () => pedir<Usuario>("/auth/me"),
     cadastrar: (d: DadosCadastro) => pedir<{ mensagem: string }>("/auth/cadastro", { method: "POST", body: JSON.stringify(d) }),
     solicitarCodigo: (email: string) =>

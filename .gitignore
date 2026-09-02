@@ -29,6 +29,14 @@ service-account*.json
 *.dump
 *.bak
 *.mdb
+# --- Provas, gabaritos e material de terceiros (conteúdo protegido, nunca versionar) ---
+*.pdf
+*.docx
+*.doc
+*.epub
+provas_pdf_gabarito/
+provas/
+material/
 data/
 dados/
 database/
