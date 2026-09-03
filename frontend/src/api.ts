@@ -23,6 +23,7 @@ export class ApiError extends Error {
 async function pedir<T>(caminho: string, init?: RequestInit): Promise<T> {
     const res = await fetch(`/api/v1${caminho}`, {
         credentials: "include",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         ...init,
     })
@@ -41,7 +42,7 @@ export type DadosCadastro = { nome: string; email: string; cpf: string; telefone
 export type Choice = { letra: string; texto: string }
 export type Questao = {
     id: number; numero: number; pagina: number; disciplina: string; enunciado: string
-    gabarito: string | null; tem_figura: boolean; confianca: number; aviso: string
+    gabarito: string | null; tem_figura: boolean; modo_exibicao: string; confianca: number; aviso: string
     revisada: boolean; descartada: boolean; alternativas: Choice[]
 }
 export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
@@ -68,7 +69,7 @@ export type ConexaoInput = {
 }
 export type PatchQuestao = Partial<{
     enunciado: string; gabarito: string; disciplina: string
-    alternativas: Record<string, string>; revisada: boolean; descartada: boolean
+    alternativas: Record<string, string>; revisada: boolean; descartada: boolean; modo_exibicao: string
 }>
 
 export const api = {

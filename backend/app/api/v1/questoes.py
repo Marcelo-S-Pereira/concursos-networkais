@@ -28,6 +28,7 @@ class QuestaoOut(BaseModel):
     enunciado: str
     gabarito: str | None
     tem_figura: bool
+    modo_exibicao: str
     confianca: float
     aviso: str
     revisada: bool
@@ -52,12 +53,14 @@ class QuestaoPatch(BaseModel):
     alternativas: dict[str, str] | None = None  # {"A": "texto", ...}
     revisada: bool | None = None
     descartada: bool | None = None
+    modo_exibicao: str | None = None
 
 
 def _para_saida(q: Question) -> QuestaoOut:
     return QuestaoOut(
         id=q.id, numero=q.numero, pagina=q.pagina, disciplina=q.disciplina, enunciado=q.enunciado,
-        gabarito=q.gabarito, tem_figura=q.tem_figura, confianca=q.confianca, aviso=q.aviso,
+        gabarito=q.gabarito, tem_figura=q.tem_figura, modo_exibicao=q.modo_exibicao,
+        confianca=q.confianca, aviso=q.aviso,
         revisada=q.revisada, descartada=q.descartada,
         alternativas=[ChoiceOut(letra=c.letra, texto=c.texto) for c in q.alternativas],
     )
@@ -110,6 +113,10 @@ def editar_questao(qid: int, dados: QuestaoPatch, _: User = Depends(usuario_atua
             q.confianca = 1.0  # revisão humana zera a dúvida
     if dados.descartada is not None:
         q.descartada = dados.descartada
+    if dados.modo_exibicao is not None:
+        if dados.modo_exibicao not in ("texto", "imagem"):
+            raise HTTPException(status_code=422, detail="modo_exibicao deve ser 'texto' ou 'imagem'.")
+        q.modo_exibicao = dados.modo_exibicao
     db.commit()
     db.refresh(q)
     return _para_saida(q)

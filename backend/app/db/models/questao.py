@@ -35,6 +35,7 @@ class Question(Base):
     enunciado: Mapped[str] = mapped_column(Text)
     gabarito: Mapped[str | None] = mapped_column(String(1), nullable=True)  # A-E; None se o gabarito não casou
     tem_figura: Mapped[bool] = mapped_column(Boolean, default=False)
+    modo_exibicao: Mapped[str] = mapped_column(String(10), default="texto")  # texto | imagem
     pagina: Mapped[int] = mapped_column(Integer, default=0)  # página do PDF de origem
     confianca: Mapped[float] = mapped_column(Float, default=1.0)
     aviso: Mapped[str] = mapped_column(String(200), default="")

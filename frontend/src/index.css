@@ -343,3 +343,21 @@ button.ia:hover { background: #5b21b6; }
 .dropzone span { font-size: .8rem; }
 .dropzone.sobre { border-color: var(--ok); background: rgba(53,210,155,.08); }
 .dropzone.ok { border-color: var(--ok); border-style: solid; }
+
+/* --- barra de tempo fixa (aparece no topo durante o simulado; útil no celular) --- */
+.relogio-fixo {
+    position: sticky; top: 0; z-index: 20; grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    background: var(--texto); color: var(--cartao); padding: 8px 14px; border-radius: 0 0 10px 10px;
+    font-size: 1.2rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.relogio-fixo.urgente { background: var(--falha); color: #fff; }
+.entregar-mini { min-height: 0; padding: 5px 12px; background: var(--cartao); color: var(--texto); border: 0; border-radius: 6px; font-size: .85rem; }
+
+/* --- origem: toggle texto/print + duas colunas --- */
+.toggle-origem, .exib-simulado { display: flex; align-items: center; gap: 6px; margin: 6px 0; font-size: .82rem; color: var(--suave); flex-wrap: wrap; }
+.toggle-origem button, .exib-simulado button { min-height: 0; padding: 5px 12px; border: 1px solid var(--borda); border-radius: 6px; background: var(--fundo); color: var(--texto); }
+.toggle-origem button.on, .exib-simulado button.on { background: var(--texto); color: var(--cartao); border-color: var(--texto); }
+.duas-colunas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .duas-colunas { grid-template-columns: 1fr; } }
+.questao-img { max-width: 100%; }

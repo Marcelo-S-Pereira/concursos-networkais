@@ -122,8 +122,17 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
     const [recortando, setRecortando] = useState(false)
     const [versaoImg, setVersaoImg] = useState(Date.now())
     const [verPagina, setVerPagina] = useState(false)
-    const [verImg, setVerImg] = useState(false)
     const [textoPag, setTextoPag] = useState<string>("")
+    const [modoExib, setModoExib] = useState(q.modo_exibicao)
+    const [origemVista, setOrigemVista] = useState<"texto" | "imagem">("texto")
+
+    // divide o texto da página nas duas colunas (esquerda/direita) para edição
+    const [colEsq, colDir] = (() => {
+        const t = textoPag
+        const iDir = t.indexOf("── COLUNA DIREITA ──")
+        if (iDir >= 0) return [t.slice(0, iDir).replace("── COLUNA ESQUERDA ──", "").trim(), t.slice(iDir).replace("── COLUNA DIREITA ──", "").trim()]
+        return [t.replace("── COLUNA ESQUERDA ──", "").trim(), ""]
+    })()
 
     async function alternarPagina() {
         const abrir = !verPagina
@@ -150,7 +159,7 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
 
     async function salvar(extra?: { revisada?: boolean }) {
         setSalvando(true)
-        try { aoMudar(await api.editarQuestao(q.id, { enunciado, alternativas: alts, ...extra })) }
+        try { aoMudar(await api.editarQuestao(q.id, { enunciado, alternativas: alts, modo_exibicao: modoExib, ...extra })) }
         finally { setSalvando(false) }
     }
 
@@ -172,12 +181,23 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
                 </button>
                 {verPagina && (
                     <div className="origem-conteudo-texto">
-                        <p className="dica">Texto real do PDF, em colunas — selecione e copie para corrigir os campos.</p>
-                        <textarea className="texto-origem" value={textoPag} readOnly rows={16} onFocus={(e) => e.target.select()} />
-                        <button className="link" onClick={() => setVerImg((v) => !v)}>
-                            {verImg ? "▾ ocultar imagem do PDF" : "▸ ver imagem do PDF (a página como aparece na prova)"}
-                        </button>
-                        {verImg && <img className="figura" src={api.paginaImagemUrl(examId, q.pagina)} alt={`página ${q.pagina + 1}`} />}
+                        <div className="toggle-origem">
+                            <button className={origemVista === "texto" ? "on" : ""} onClick={() => setOrigemVista("texto")}>Texto (2 colunas)</button>
+                            <button className={origemVista === "imagem" ? "on" : ""} onClick={() => setOrigemVista("imagem")}>Print do PDF</button>
+                        </div>
+                        {origemVista === "texto" ? (
+                            <div className="duas-colunas">
+                                <label className="campo">Coluna esquerda
+                                    <RichText valor={colEsq} aoMudar={() => {}} minRows={10} />
+                                </label>
+                                <label className="campo">Coluna direita
+                                    <RichText valor={colDir} aoMudar={() => {}} minRows={10} />
+                                </label>
+                            </div>
+                        ) : (
+                            <img className="figura" src={api.paginaImagemUrl(examId, q.pagina)} alt={`página ${q.pagina + 1}`} />
+                        )}
+                        <p className="dica">Selecione e copie o texto para corrigir o enunciado e as alternativas abaixo.</p>
                     </div>
                 )}
             </div>
@@ -215,6 +235,12 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
             </div>
 
             {erroIA && <p className="falha">{erroIA}</p>}
+            <div className="exib-simulado">
+                No simulado, mostrar:
+                <button className={modoExib === "texto" ? "on" : ""} onClick={() => setModoExib("texto")}>Texto</button>
+                <button className={modoExib === "imagem" ? "on" : ""} onClick={() => setModoExib("imagem")}>Print da questão</button>
+                {modoExib === "imagem" && !q.tem_figura && <span className="dica">⚠ recorte o print da questão abaixo antes de salvar.</span>}
+            </div>
             <div className="acoes">
                 <button disabled={transcrevendo} className="ia" onClick={corrigirComIA} title="Transcreve esta questão com a IA cadastrada (revise antes de salvar)">
                     {transcrevendo ? "IA transcrevendo…" : "✨ Corrigir com IA"}

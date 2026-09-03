@@ -104,17 +104,29 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
 
     return (
         <div className="simulado">
+            {run && !resultado && (
+                <div className={`relogio-fixo ${restante < 60 ? "urgente" : ""}`}>
+                    ⏱ {mm}:{ss}
+                    <button className="entregar-mini" onClick={entregar}>Entregar</button>
+                </div>
+            )}
             <div className="coluna-questoes">
                 {qs.map((q) => (
                     <article key={q.id} className="q-prova">
                         <header><strong>{q.numero}</strong> <span className="disc">{q.disciplina}</span></header>
-                        <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
-                        {q.tem_figura && <img className="figura" src={api.figuraUrl(q.id)} alt="figura" />}
-                        <ol className="alts-prova">
-                            {q.alternativas.map((a) => (
-                                <li key={a.letra}><b>{a.letra})</b> <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(a.texto) }} /></li>
-                            ))}
-                        </ol>
+                        {q.modo_exibicao === "imagem" ? (
+                            <img className="figura questao-img" src={api.figuraUrl(q.id)} alt={`questão ${q.numero}`} />
+                        ) : (
+                            <>
+                                <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                                {q.tem_figura && <img className="figura" src={api.figuraUrl(q.id)} alt="figura" />}
+                                <ol className="alts-prova">
+                                    {q.alternativas.map((a) => (
+                                        <li key={a.letra}><b>{a.letra})</b> <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(a.texto) }} /></li>
+                                    ))}
+                                </ol>
+                            </>
+                        )}
                         {modo === "celular" && !resultado && (
                             <SeletorGrande cor={corCaneta}
                                 marcada={[...(marcadas[q.id] ?? [])][0]}
