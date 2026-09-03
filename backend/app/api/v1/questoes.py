@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -122,3 +122,61 @@ def figura(qid: int, _: User = Depends(usuario_atual), db: Session = Depends(get
     if not caminho.exists():
         raise HTTPException(status_code=404, detail="Imagem não encontrada.")
     return FileResponse(caminho, media_type="image/png")
+
+
+@router.post("/questoes/{qid}/figura")
+async def salvar_figura(
+    qid: int, arquivo: UploadFile, _: User = Depends(usuario_atual), db: Session = Depends(get_db)
+):
+    """Recebe o RECORTE (PNG) feito na tela e o integra à questão como figura."""
+    q = db.get(Question, qid)
+    if not q:
+        raise HTTPException(status_code=404, detail="Questão não encontrada.")
+    if arquivo.content_type not in ("image/png", "image/jpeg"):
+        raise HTTPException(status_code=422, detail="Envie uma imagem PNG ou JPEG.")
+    conteudo = await arquivo.read()
+    if len(conteudo) > 5_000_000:
+        raise HTTPException(status_code=413, detail="Imagem grande demais (máx 5MB).")
+    FIGURAS_DIR.mkdir(parents=True, exist_ok=True)
+    destino = FIGURAS_DIR / f"exam{q.exam_id}_q{q.numero}.png"
+    destino.write_bytes(conteudo)
+    q.tem_figura = True
+    db.commit()
+    return {"ok": True}
+
+
+class RespostasIn(BaseModel):
+    respostas: dict[int, str]  # {question_id: "A".."E"}
+
+
+class ResultadoOut(BaseModel):
+    total: int
+    respondidas: int
+    acertos: int
+    resultado: dict[int, bool]  # {question_id: acertou}
+
+
+@router.post("/{exam_id}/corrigir", response_model=ResultadoOut)
+def corrigir_simulado(
+    exam_id: int, dados: RespostasIn, _: User = Depends(usuario_atual), db: Session = Depends(get_db)
+):
+    """Corrige o cartão-resposta contra o gabarito da base. Só aqui o resultado
+    aparece — durante o preenchimento o gabarito nunca é exposto."""
+    exam = db.get(Exam, exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Prova não encontrada.")
+    questoes = {q.id: q for q in exam.questoes if not q.descartada}
+    resultado: dict[int, bool] = {}
+    acertos = 0
+    for qid, questao in questoes.items():
+        marcada = dados.respostas.get(qid)
+        acertou = marcada is not None and questao.gabarito is not None and marcada.upper() == questao.gabarito
+        resultado[qid] = acertou
+        if acertou:
+            acertos += 1
+    return ResultadoOut(
+        total=len(questoes),
+        respondidas=len([qid for qid in questoes if dados.respostas.get(qid)]),
+        acertos=acertos,
+        resultado=resultado,
+    )

@@ -16,3 +16,10 @@ def usuario_atual(request: Request, db: Session = Depends(get_db)) -> User:
         request.session.clear()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autenticado.")
     return user
+
+
+def apenas_superadmin(user: User = Depends(usuario_atual)) -> User:
+    """Gate para as rotas administrativas (conexões de IA, etc.)."""
+    if user.role != "superadmin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso restrito ao administrador.")
+    return user

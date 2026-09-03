@@ -149,3 +149,66 @@ textarea { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--bo
 
 .acoes { display: flex; flex-wrap: wrap; gap: 8px; }
 .acoes button { flex: 0 0 auto; }
+
+/* --- Conexões de IA --- */
+.secao-ia { margin-bottom: 24px; }
+.secao-cab { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.secao-cab h3 { margin: 0; font-size: 1rem; }
+.secao-cab .dica { color: var(--suave); font-weight: 400; font-size: .8rem; }
+.secao-cab .add { margin-left: auto; }
+.vazio { color: var(--suave); font-size: .85rem; margin: 4px 0 12px; }
+
+.card-ia { border: 1px solid var(--borda); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+.card-ia.ativa { border-color: var(--ok); }
+.card-topo { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; background: var(--cartao); }
+.card-topo .seta { color: var(--suave); }
+.card-topo .modelo { color: var(--suave); font-size: .82rem; }
+.card-topo .chave { margin-left: auto; font-family: monospace; color: var(--suave); font-size: .82rem; }
+.tag-ativa { background: var(--ok); color: #fff; border-radius: 20px; padding: 1px 9px; font-size: .72rem; }
+.tag-fb { color: var(--suave); font-size: .75rem; }
+.card-corpo { padding: 14px; border-top: 1px solid var(--borda); }
+
+.form-ia { display: grid; gap: 10px; }
+.form-ia label { display: grid; gap: 4px; font-size: .82rem; color: var(--suave); }
+.form-ia .dupla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.form-ia .mant { font-size: .72rem; }
+.linha-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.fb-input { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--suave); }
+.fb-input input { width: 64px; }
+.teste-res { font-size: .82rem; color: var(--suave); }
+button.perigo { background: transparent; color: var(--falha); border: 1px solid var(--falha); }
+
+/* --- Cadastro: recorte de figura --- */
+.figura-bloco { margin: 8px 0; }
+.recortador { margin-top: 8px; }
+.recortador .dica { color: var(--suave); font-size: .82rem; margin: 4px 0; }
+.area-recorte { position: relative; display: inline-block; touch-action: none; cursor: crosshair; border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
+.area-recorte img { display: block; max-width: 100%; user-select: none; }
+.selecao { position: absolute; border: 2px solid var(--ok); background: rgba(53,210,155,.18); pointer-events: none; }
+.link { background: none; border: none; color: var(--suave); text-decoration: underline; padding: 0; min-height: 0; cursor: pointer; }
+
+/* --- Caderno / simulado --- */
+.simulado { display: grid; grid-template-columns: 1fr 280px; gap: 20px; align-items: start; }
+@media (max-width: 720px) { .simulado { grid-template-columns: 1fr; } .cartao-resposta { position: static !important; } }
+.coluna-questoes { display: grid; gap: 14px; }
+.q-prova { background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px; padding: 14px; }
+.q-prova header { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+.q-prova .enun { margin: 0 0 8px; }
+.alts-prova { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.alts-prova li { font-size: .92rem; }
+.acertou { color: var(--ok); font-weight: 600; }
+.errou { color: var(--falha); font-weight: 600; }
+
+.cartao-resposta { position: sticky; top: 16px; background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 14px; }
+.cartao-resposta h3 { margin: 0 0 4px; font-size: 1rem; }
+.cartao-resposta .regra { color: var(--suave); font-size: .75rem; margin: 0 0 10px; }
+.folha { max-height: 60vh; overflow-y: auto; display: grid; gap: 3px; }
+.linha-cartao { display: flex; align-items: center; gap: 5px; }
+.linha-cartao.anulada { background: rgba(192,38,38,.12); border-radius: 6px; }
+.linha-cartao .num { width: 24px; text-align: right; font-size: .78rem; color: var(--suave); font-variant-numeric: tabular-nums; }
+.bolha { border: 1.5px solid var(--suave); border-radius: 50%; touch-action: none; cursor: crosshair; background: var(--fundo); }
+.bolha.cheia { border-color: var(--texto); }
+.limpa { background: none; border: none; color: var(--suave); cursor: pointer; min-height: 0; padding: 0 4px; }
+.entregar { width: 100%; margin-top: 12px; }
+.placar { margin-top: 12px; text-align: center; font-size: 1.1rem; }
+.placar span { display: block; color: var(--suave); font-size: .8rem; }

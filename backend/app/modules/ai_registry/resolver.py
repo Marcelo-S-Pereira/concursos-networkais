@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import AiConnection
 
-CATEGORIAS = ("texto", "visao", "embeddings", "transcricao")
+CATEGORIAS = ("texto", "visao", "embeddings", "transcricao", "voz")
 
 _cache: dict[str, tuple[float, list[AiConnection]]] = {}
 _TTL = 60.0  # segundos

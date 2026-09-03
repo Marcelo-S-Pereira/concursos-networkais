@@ -45,6 +45,22 @@ export type Questao = {
     revisada: boolean; descartada: boolean; alternativas: Choice[]
 }
 export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
+export type ResultadoSimulado = { total: number; respondidas: number; acertos: number; resultado: Record<number, boolean> }
+export type ConexaoIA = {
+    id: number; nome: string; endpoint: string; modelo: string; categoria: string
+    tipo_deploy: string; ativa: boolean; ordem_fallback: number | null
+    max_tokens: number; temperatura: number
+    context_window_tokens: number | null; rate_limit_rpm: number | null
+    preco_entrada_por_milhao: number | null; preco_saida_por_milhao: number | null
+    moeda: string; chave_mascarada: string
+}
+export type ConexaoInput = {
+    nome: string; endpoint: string; api_key: string; modelo: string; categoria: string
+    tipo_deploy?: string; max_tokens?: number; temperatura?: number
+    context_window_tokens?: number | null; rate_limit_rpm?: number | null
+    preco_entrada_por_milhao?: number | null; preco_saida_por_milhao?: number | null
+    moeda?: string
+}
 export type PatchQuestao = Partial<{
     enunciado: string; gabarito: string; disciplina: string
     alternativas: Record<string, string>; revisada: boolean; descartada: boolean
@@ -56,6 +72,24 @@ export const api = {
     editarQuestao: (qid: number, dados: PatchQuestao) =>
         pedir<Questao>(`/exames/questoes/${qid}`, { method: "PATCH", body: JSON.stringify(dados) }),
     figuraUrl: (qid: number) => `/api/v1/exames/questoes/${qid}/figura`,
+    salvarFigura: async (qid: number, blob: Blob) => {
+        const fd = new FormData()
+        fd.append("arquivo", blob, "recorte.png")
+        const res = await fetch(`/api/v1/exames/questoes/${qid}/figura`, { method: "POST", credentials: "include", body: fd })
+        if (!res.ok) throw new Error("Falha ao salvar recorte")
+        return res.json()
+    },
+    corrigir: (examId: number, respostas: Record<number, string>) =>
+        pedir<ResultadoSimulado>(`/exames/${examId}/corrigir`, { method: "POST", body: JSON.stringify({ respostas }) }),
+
+    conexoesIA: () => pedir<ConexaoIA[]>("/ai/conexoes"),
+    criarConexao: (d: ConexaoInput) => pedir<ConexaoIA>("/ai/conexoes", { method: "POST", body: JSON.stringify(d) }),
+    editarConexao: (id: number, d: ConexaoInput) => pedir<ConexaoIA>(`/ai/conexoes/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    apagarConexao: (id: number) => pedir<void>(`/ai/conexoes/${id}`, { method: "DELETE" }),
+    ativarConexao: (id: number) => pedir<ConexaoIA[]>(`/ai/conexoes/${id}/ativar`, { method: "POST" }),
+    fallbackConexao: (id: number, ordem: number | null) => pedir<ConexaoIA[]>(`/ai/conexoes/${id}/fallback`, { method: "POST", body: JSON.stringify({ ordem }) }),
+    revelarChave: (id: number) => pedir<{ api_key: string }>(`/ai/conexoes/${id}/revelar`),
+    testarConexao: (id: number) => pedir<{ ok: boolean | null; resposta?: string; dimensao?: number }>(`/ai/conexoes/${id}/testar`, { method: "POST" }),
     me: () => pedir<Usuario>("/auth/me"),
     cadastrar: (d: DadosCadastro) => pedir<{ mensagem: string }>("/auth/cadastro", { method: "POST", body: JSON.stringify(d) }),
     solicitarCodigo: (email: string) =>
