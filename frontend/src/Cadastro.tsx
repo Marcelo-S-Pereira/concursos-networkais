@@ -43,6 +43,7 @@ function CartaoCadastro({ q, aoMudar }: { q: Questao; aoMudar: (q: Questao) => v
     const [alts, setAlts] = useState<Record<string, string>>(Object.fromEntries(q.alternativas.map((a) => [a.letra, a.texto])))
     const [verGabarito, setVerGabarito] = useState(false)
     const [recortando, setRecortando] = useState(false)
+    const [versaoImg, setVersaoImg] = useState(Date.now())
     const [salvando, setSalvando] = useState(false)
 
     async function salvar(extra?: { revisada?: boolean }) {
@@ -65,12 +66,20 @@ function CartaoCadastro({ q, aoMudar }: { q: Questao; aoMudar: (q: Questao) => v
 
             {q.tem_figura && (
                 <div className="figura-bloco">
-                    <button className="secundario" onClick={() => setRecortando((v) => !v)}>
-                        {recortando ? "Fechar recorte" : "✂ Recortar figura da página"}
-                    </button>
+                    <div className="linha-acoes">
+                        <button className="secundario" onClick={() => setRecortando((v) => !v)}>
+                            {recortando ? "Fechar recorte" : "✂ Recortar figura da página"}
+                        </button>
+                        <button className="secundario" onClick={async () => {
+                            if (confirm("Restaurar a página original desta figura? O recorte atual será desfeito.")) {
+                                await api.restaurarFigura(q.id)
+                                setVersaoImg(Date.now())
+                            }
+                        }}>↺ Restaurar página</button>
+                    </div>
                     {recortando
-                        ? <Recortador qid={q.id} aoConcluir={() => { setRecortando(false); aoMudar({ ...q }) }} />
-                        : <img className="figura" src={`${api.figuraUrl(q.id)}?t=${Date.now()}`} alt={`figura q${q.numero}`} />}
+                        ? <Recortador qid={q.id} aoConcluir={() => { setRecortando(false); setVersaoImg(Date.now()) }} />
+                        : <img className="figura" src={`${api.figuraUrl(q.id)}?t=${versaoImg}`} alt={`figura q${q.numero}`} />}
                 </div>
             )}
 

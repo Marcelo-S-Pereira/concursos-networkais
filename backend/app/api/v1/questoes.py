@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -180,3 +181,18 @@ def corrigir_simulado(
         acertos=acertos,
         resultado=resultado,
     )
+
+
+@router.post("/questoes/{qid}/figura/restaurar")
+def restaurar_figura(qid: int, _: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Restaura a página original (desfaz o recorte), copiando o `_original.png`
+    de volta para o PNG de exibição."""
+    q = db.get(Question, qid)
+    if not q or not q.tem_figura:
+        raise HTTPException(status_code=404, detail="Sem figura.")
+    exibicao = FIGURAS_DIR / f"exam{q.exam_id}_q{q.numero}.png"
+    original = FIGURAS_DIR / f"exam{q.exam_id}_q{q.numero}_original.png"
+    if not original.exists():
+        raise HTTPException(status_code=404, detail="Página original não disponível.")
+    shutil.copyfile(original, exibicao)
+    return {"ok": True}

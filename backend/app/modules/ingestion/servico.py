@@ -40,11 +40,14 @@ def _texto_limpo(paginas: list[str]) -> str:
 
 
 def _renderizar_pagina(caminho_pdf: str, pagina: int, destino: Path) -> None:
+    """Renderiza a página para o PNG de exibição E guarda um `_original.png`
+    ao lado (nunca sobrescrito pelo recorte) para o botão Restaurar."""
     pdf = pdfium.PdfDocument(caminho_pdf)
     try:
         img = pdf[pagina].render(scale=2).to_pil()
         destino.parent.mkdir(parents=True, exist_ok=True)
         img.save(destino)
+        img.save(destino.with_name(destino.stem + "_original.png"))
     finally:
         pdf.close()
 

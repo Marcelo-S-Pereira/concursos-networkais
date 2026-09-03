@@ -79,6 +79,7 @@ export const api = {
         if (!res.ok) throw new Error("Falha ao salvar recorte")
         return res.json()
     },
+    restaurarFigura: (qid: number) => pedir<{ ok: boolean }>(`/exames/questoes/${qid}/figura/restaurar`, { method: "POST" }),
     corrigir: (examId: number, respostas: Record<number, string>) =>
         pedir<ResultadoSimulado>(`/exames/${examId}/corrigir`, { method: "POST", body: JSON.stringify({ respostas }) }),
 
