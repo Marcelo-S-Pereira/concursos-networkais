@@ -219,3 +219,6 @@ button.perigo { background: transparent; color: var(--falha); border: 1px solid 
 @media (max-width: 720px) { .origem-conteudo { grid-template-columns: 1fr; } }
 .origem-img img { max-width: 100%; border: 1px solid var(--borda); border-radius: 8px; }
 .texto-origem { font-family: monospace; font-size: .78rem; line-height: 1.4; white-space: pre-wrap; }
+
+.origem-conteudo-texto { margin-top: 8px; display: grid; gap: 8px; }
+.origem-conteudo-texto .dica { color: var(--suave); font-size: .8rem; margin: 0; }

@@ -47,6 +47,7 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
     const [verPagina, setVerPagina] = useState(false)
     const [recortePag, setRecortePag] = useState(false)
     const [textoPag, setTextoPag] = useState<string>("")
+    const [verImg, setVerImg] = useState(false)
 
     async function alternarPagina() {
         const abrir = !verPagina
@@ -75,21 +76,25 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
 
             <div className="origem">
                 <button className="link" onClick={alternarPagina}>
-                    {verPagina ? "▾ ocultar página de origem" : "▸ ver página de origem (pág. " + (q.pagina + 1) + ")"}
+                    {verPagina ? "▾ ocultar página de origem" : `▸ ver página de origem (pág. ${q.pagina + 1})`}
                 </button>
                 {verPagina && (
-                    <div className="origem-conteudo">
-                        <div className="origem-img">
-                            <button className="secundario" onClick={() => setRecortePag((v) => !v)}>
-                                {recortePag ? "Fechar recorte" : "✂ Recortar desta página"}
-                            </button>
-                            {recortePag
-                                ? <RecortadorPagina examId={examId} pagina={q.pagina} qid={q.id} aoConcluir={() => { setRecortePag(false); setVersaoImg(Date.now()) }} />
-                                : <img className="figura" src={api.paginaImagemUrl(examId, q.pagina)} alt={`página ${q.pagina + 1}`} />}
-                        </div>
-                        <label className="campo">Texto extraído da página (selecione e copie para corrigir os campos)
-                            <textarea className="texto-origem" value={textoPag} readOnly rows={10} onFocus={(e) => e.target.select()} />
-                        </label>
+                    <div className="origem-conteudo-texto">
+                        <p className="dica">Texto real do PDF (não é print) — selecione e copie para corrigir os campos.</p>
+                        <textarea className="texto-origem" value={textoPag} readOnly rows={12} onFocus={(e) => e.target.select()} />
+                        <button className="link" onClick={() => setVerImg((v) => !v)}>
+                            {verImg ? "ocultar imagem da página" : "ver imagem da página (para conferir figura/layout)"}
+                        </button>
+                        {verImg && (
+                            <div className="origem-img">
+                                <button className="secundario" onClick={() => setRecortePag((v) => !v)}>
+                                    {recortePag ? "Fechar recorte" : "✂ Recortar figura desta página"}
+                                </button>
+                                {recortePag
+                                    ? <RecortadorPagina examId={examId} pagina={q.pagina} qid={q.id} aoConcluir={() => { setRecortePag(false); setVersaoImg(Date.now()) }} />
+                                    : <img className="figura" src={api.paginaImagemUrl(examId, q.pagina)} alt={`página ${q.pagina + 1}`} />}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
