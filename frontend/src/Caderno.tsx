@@ -196,6 +196,11 @@ function Simulado({ exameId }: { exameId: number }) {
                                         <div className="barra"><div className="preenche" style={{ width: `${e.percentual}%` }} /></div>
                                         <span className="enf-pct">{e.percentual}%</span>
                                         <span className={`mastery ${e.mastery.toLowerCase()}`}>{rotuloMastery(e.mastery)}</span>
+                                        {e.historico_pct != null && e.delta != null && (
+                                            <span className="delta" title={`Histórico: ${e.historico_pct}% (N=${e.amostra_historico ?? "?"})`}>
+                                                vs {e.historico_pct}% · {e.delta > 0 ? "+" : ""}{e.delta}pp {e.delta_rotulo}
+                                            </span>
+                                        )}
                                     </div>
                                 ))}
                             </div>

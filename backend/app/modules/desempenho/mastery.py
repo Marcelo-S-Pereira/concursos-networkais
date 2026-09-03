@@ -39,3 +39,15 @@ def por_enfase(itens: list[tuple[str, bool]]) -> list[dict]:
             "amostra": total,
         })
     return saida
+
+
+def rotulo_delta(delta: float) -> str:
+    if delta >= 15:
+        return "muito acima"
+    if delta >= 5:
+        return "acima"
+    if delta > -5:
+        return "próximo"
+    if delta > -15:
+        return "abaixo"
+    return "muito abaixo"

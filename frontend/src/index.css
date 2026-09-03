@@ -297,3 +297,15 @@ button.ia:hover { background: #5b21b6; }
 .mastery.consistent { background: #2b7de0; }
 .mastery.strong { background: var(--ok); }
 .mastery.not_tested { background: var(--suave); }
+
+/* --- estatísticas admin --- */
+.form-estat h3 { margin: 0 0 10px; font-size: .95rem; }
+.grade-estat { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.grade-estat label { display: grid; gap: 4px; font-size: .8rem; color: var(--suave); }
+.tabela-estat { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: .85rem; }
+.tabela-estat th, .tabela-estat td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borda); }
+.tabela-estat th { color: var(--suave); font-weight: 600; }
+
+/* comparação no desempenho */
+.linha-enfase { grid-template-columns: 1fr auto 70px auto auto 1fr; }
+.delta { font-size: .72rem; color: var(--suave); }

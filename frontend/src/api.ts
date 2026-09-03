@@ -47,7 +47,9 @@ export type Questao = {
 export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
 export type ResultadoSimulado = { total: number; respondidas: number; acertos: number; percentual_bruto: number; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[] }
 export type SimRun = { simulation_id: number; started_at: string; deadline_at: string; duration_seconds: number; question_count: number; status: string }
-export type EnfaseDesempenho = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number }
+export type EnfaseDesempenho = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number; historico_pct?: number | null; delta?: number | null; delta_rotulo?: string; amostra_historico?: number | null }
+export type StatEnfase = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; enfase: string; amostra: number | null; acerto_pct: number | null; fonte: string; tipo_fonte: string; status: string }
+export type StatEnfaseInput = Omit<StatEnfase, "id">
 export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[] }
 export type ConexaoIA = {
     id: number; nome: string; endpoint: string; modelo: string; categoria: string
@@ -91,6 +93,10 @@ export const api = {
     restaurarFigura: (qid: number) => pedir<{ ok: boolean }>(`/exames/questoes/${qid}/figura/restaurar`, { method: "POST" }),
     corrigir: (examId: number, respostas: Record<number, string>) =>
         pedir<ResultadoSimulado>(`/exames/${examId}/corrigir`, { method: "POST", body: JSON.stringify({ respostas }) }),
+    estatEnfase: () => pedir<StatEnfase[]>("/estatisticas/enfase"),
+    criarEstat: (d: StatEnfaseInput) => pedir<StatEnfase>("/estatisticas/enfase", { method: "POST", body: JSON.stringify(d) }),
+    editarEstat: (id: number, d: StatEnfaseInput) => pedir<StatEnfase>(`/estatisticas/enfase/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    apagarEstat: (id: number) => pedir<void>(`/estatisticas/enfase/${id}`, { method: "DELETE" }),
     iniciarSimulado: (examId: number, duration_seconds: number) =>
         pedir<SimRun>(`/simulado/iniciar`, { method: "POST", body: JSON.stringify({ exam_id: examId, duration_seconds }) }),
     entregarSimulado: (runId: number, respostas: Record<number, string>) =>

@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import usuario_atual
-from app.db.models import Exam, SimulationAnswer, SimulationRun, User
+from app.db.models import EmphasisPublicStat, Exam, SimulationAnswer, SimulationRun, User
 from app.db.session import get_db
-from app.modules.desempenho.mastery import por_enfase
+from app.modules.desempenho.mastery import por_enfase, rotulo_delta
 
 router = APIRouter(prefix="/simulado")
 
@@ -99,8 +99,40 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
     db.commit()
 
     total = len(questoes)
+    enfases = por_enfase(itens_enfase)
+    _anexar_historico(db, exam, enfases)
     return ResultadoOut(
         acertos=acertos, total=total, respondidas=respondidas, em_branco=total - respondidas,
         percentual_bruto=round(acertos / total * 100, 1) if total else 0.0,
-        encerrado_no_prazo=no_prazo, resultado=resultado, por_enfase=por_enfase(itens_enfase),
+        encerrado_no_prazo=no_prazo, resultado=resultado, por_enfase=enfases,
     )
+
+
+def _anexar_historico(db: Session, exam: Exam, enfases: list[dict]) -> None:
+    """Para cada ênfase, busca a estatística pública mais aderente (mesma banca/
+    órgão/cargo primeiro; senão só a ênfase) e calcula o delta (spec §10). Sem
+    dado: marca PUBLIC_DATA_NOT_FOUND — nunca inventa."""
+    from sqlalchemy import select
+    for e in enfases:
+        stat = db.execute(
+            select(EmphasisPublicStat).where(
+                EmphasisPublicStat.enfase == e["enfase"],
+                EmphasisPublicStat.banca == exam.banca,
+                EmphasisPublicStat.cargo == exam.cargo,
+            )
+        ).scalars().first()
+        if not stat:
+            stat = db.execute(
+                select(EmphasisPublicStat).where(EmphasisPublicStat.enfase == e["enfase"])
+            ).scalars().first()
+        if stat and stat.acerto_pct is not None and stat.status == "OK":
+            delta = round(e["percentual"] - stat.acerto_pct, 1)
+            e["historico_pct"] = stat.acerto_pct
+            e["amostra_historico"] = stat.amostra
+            e["delta"] = delta
+            e["delta_rotulo"] = rotulo_delta(delta)
+            e["fonte"] = stat.fonte
+        else:
+            e["historico_pct"] = None
+            e["delta"] = None
+            e["status_historico"] = "PUBLIC_DATA_NOT_FOUND"
