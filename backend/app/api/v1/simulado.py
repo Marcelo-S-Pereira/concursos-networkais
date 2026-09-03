@@ -1,0 +1,102 @@
+"""Simulado por tempo. O backend é dono do relógio (spec §6): define o prazo e
+recusa a finalização depois dele como 'no prazo'. A correção usa o gabarito da
+base — nunca exposto antes do fim."""
+
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.api.deps import usuario_atual
+from app.db.models import Exam, SimulationAnswer, SimulationRun, User
+from app.db.session import get_db
+
+router = APIRouter(prefix="/simulado")
+
+
+class IniciarIn(BaseModel):
+    exam_id: int
+    duration_seconds: int = Field(ge=30, le=6 * 3600)
+
+
+class RunOut(BaseModel):
+    simulation_id: int
+    started_at: datetime
+    deadline_at: datetime
+    duration_seconds: int
+    question_count: int
+    status: str
+
+
+class EntregarIn(BaseModel):
+    respostas: dict[int, str]  # {question_id: "A".."E"}
+
+
+class ResultadoOut(BaseModel):
+    acertos: int
+    total: int
+    respondidas: int
+    em_branco: int
+    percentual_bruto: float
+    encerrado_no_prazo: bool
+    resultado: dict[int, bool]
+
+
+@router.post("/iniciar", response_model=RunOut)
+def iniciar(dados: IniciarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    exam = db.get(Exam, dados.exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Prova não encontrada.")
+    n = len([q for q in exam.questoes if not q.descartada])
+    agora = datetime.now(UTC)
+    run = SimulationRun(
+        exam_id=exam.id, user_id=user.id, started_at=agora,
+        deadline_at=agora + timedelta(seconds=dados.duration_seconds),
+        duration_seconds=dados.duration_seconds, question_count=n, status="running",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return RunOut(
+        simulation_id=run.id, started_at=run.started_at, deadline_at=run.deadline_at,
+        duration_seconds=run.duration_seconds, question_count=run.question_count, status=run.status,
+    )
+
+
+@router.post("/{run_id}/entregar", response_model=ResultadoOut)
+def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    run = db.get(SimulationRun, run_id)
+    if not run or run.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Simulado não encontrado.")
+    if run.status == "finished":
+        raise HTTPException(status_code=409, detail="Este simulado já foi encerrado.")
+
+    agora = datetime.now(UTC)
+    no_prazo = agora <= run.deadline_at
+
+    exam = db.get(Exam, run.exam_id)
+    questoes = {q.id: q for q in exam.questoes if not q.descartada}
+    resultado: dict[int, bool] = {}
+    acertos = respondidas = 0
+    for qid, q in questoes.items():
+        letra = (dados.respostas.get(qid) or "").upper() or None
+        if letra:
+            respondidas += 1
+        correta = bool(letra and q.gabarito and letra == q.gabarito)
+        resultado[qid] = correta
+        if correta:
+            acertos += 1
+        db.add(SimulationAnswer(run_id=run.id, question_id=qid, letra=letra, correta=correta))
+
+    run.status = "finished"
+    run.acertos = acertos
+    run.finished_at = agora
+    db.commit()
+
+    total = len(questoes)
+    return ResultadoOut(
+        acertos=acertos, total=total, respondidas=respondidas, em_branco=total - respondidas,
+        percentual_bruto=round(acertos / total * 100, 1) if total else 0.0,
+        encerrado_no_prazo=no_prazo, resultado=resultado,
+    )

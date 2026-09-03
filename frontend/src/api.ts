@@ -46,6 +46,8 @@ export type Questao = {
 }
 export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
 export type ResultadoSimulado = { total: number; respondidas: number; acertos: number; resultado: Record<number, boolean> }
+export type SimRun = { simulation_id: number; started_at: string; deadline_at: string; duration_seconds: number; question_count: number; status: string }
+export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean> }
 export type ConexaoIA = {
     id: number; nome: string; endpoint: string; modelo: string; categoria: string
     tipo_deploy: string; ativa: boolean; ordem_fallback: number | null
@@ -88,6 +90,10 @@ export const api = {
     restaurarFigura: (qid: number) => pedir<{ ok: boolean }>(`/exames/questoes/${qid}/figura/restaurar`, { method: "POST" }),
     corrigir: (examId: number, respostas: Record<number, string>) =>
         pedir<ResultadoSimulado>(`/exames/${examId}/corrigir`, { method: "POST", body: JSON.stringify({ respostas }) }),
+    iniciarSimulado: (examId: number, duration_seconds: number) =>
+        pedir<SimRun>(`/simulado/iniciar`, { method: "POST", body: JSON.stringify({ exam_id: examId, duration_seconds }) }),
+    entregarSimulado: (runId: number, respostas: Record<number, string>) =>
+        pedir<SimResultado>(`/simulado/${runId}/entregar`, { method: "POST", body: JSON.stringify({ respostas }) }),
 
     conexoesIA: () => pedir<ConexaoIA[]>("/ai/conexoes"),
     criarConexao: (d: ConexaoInput) => pedir<ConexaoIA>("/ai/conexoes", { method: "POST", body: JSON.stringify(d) }),

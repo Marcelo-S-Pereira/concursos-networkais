@@ -244,3 +244,24 @@ button.perigo { background: transparent; color: var(--falha); border: 1px solid 
 .enun sub, .alts-prova sub { font-size: .7em; }
 button.ia { background: #6d28d9; color: #fff; }
 button.ia:hover { background: #5b21b6; }
+
+/* --- config do teste e cartão --- */
+.config-teste { border: 1px solid var(--borda); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+.config-teste h3 { margin: 0 0 8px; font-size: .95rem; }
+.cfg { display: flex; align-items: center; gap: 8px; font-size: .82rem; color: var(--suave); margin-bottom: 8px; }
+.cfg input[type=number] { width: 80px; }
+.cfg input[type=range] { flex: 1; }
+.relogio { font-size: 1.6rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; margin-bottom: 10px; color: var(--texto); }
+.relogio.urgente { color: var(--falha); }
+.cfg-cartao { display: grid; gap: 8px; margin-bottom: 8px; }
+.cfg-cor { display: flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--suave); }
+.cfg-cor button { width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid var(--borda); }
+.cfg-cor button.sel { border-color: var(--texto); outline: 2px solid var(--texto); }
+
+/* bolha agora tem tamanho inline; mantém o círculo e o cursor */
+.folha .bolha { border: 1px solid var(--suave); border-radius: 50%; background: var(--fundo); touch-action: none; cursor: crosshair; }
+
+/* rascunho */
+.rascunho { margin-top: 8px; }
+.papel { display: block; width: 100%; max-width: 520px; height: 180px; border: 1px dashed var(--borda); border-radius: 8px; background: #fffdf5; touch-action: none; cursor: crosshair; }
+@media (prefers-color-scheme: dark) { .papel { background: #f4f1e6; } }

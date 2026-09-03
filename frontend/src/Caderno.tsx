@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify"
 import { useEffect, useRef, useState } from "react"
-import { api, type Exame, type Questao, type ResultadoSimulado } from "./api"
+import { api, type Exame, type Questao, type SimResultado, type SimRun } from "./api"
 
 const LETRAS = ["A", "B", "C", "D", "E"]
 
@@ -23,45 +23,79 @@ export default function Caderno() {
                     </button>
                 ))}
             </div>
-            {exameId && <Simulado exameId={exameId} />}
+            {exameId && <Simulado key={exameId} exameId={exameId} />}
         </div>
     )
 }
 
 function Simulado({ exameId }: { exameId: number }) {
     const [qs, setQs] = useState<Questao[] | null>(null)
-    // marcadas[qid] = conjunto de letras preenchidas (2+ = dupla marcação = anula)
     const [marcadas, setMarcadas] = useState<Record<number, Set<string>>>({})
-    const [resultado, setResultado] = useState<ResultadoSimulado | null>(null)
+    const [foraDoCampo, setForaDoCampo] = useState<Record<number, boolean>>({})
+    const [resultado, setResultado] = useState<SimResultado | { acertos: number; total: number; respondidas: number; resultado: Record<number, boolean> } | null>(null)
+
+    // configurações do cartão
+    const [tamanhoBolha, setTamanhoBolha] = useState(22)  // px — o usuário controla
+    const [corCaneta, setCorCaneta] = useState<"#0b3d91" | "#111111">("#0b3d91")  // azul | preto
+
+    // tempo
+    const [run, setRun] = useState<SimRun | null>(null)
+    const [restante, setRestante] = useState<number>(0)
+    const [minutos, setMinutos] = useState(240)
 
     useEffect(() => {
         api.questoes(exameId).then((d) => setQs(d.filter((q) => !q.descartada))).catch(() => setQs([]))
     }, [exameId])
 
+    // cronômetro do simulado por tempo
+    useEffect(() => {
+        if (!run || resultado) return
+        const fim = new Date(run.deadline_at).getTime()
+        const t = setInterval(() => {
+            const s = Math.max(0, Math.round((fim - Date.now()) / 1000))
+            setRestante(s)
+            if (s <= 0) { clearInterval(t); entregar() }
+        }, 250)
+        return () => clearInterval(t)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [run, resultado])
+
     if (!qs) return <p className="neutro">Carregando questões…</p>
 
-    function preencher(qid: number, letra: string) {
-        setMarcadas((m) => {
-            const atual = new Set(m[qid] ?? [])
-            atual.add(letra)  // uma vez preenchida, some só ao "limpar" — mudar = dupla marcação
-            return { ...m, [qid]: atual }
-        })
+    function marcar(qid: number, letra: string, fora: boolean) {
+        if (fora) { setForaDoCampo((f) => ({ ...f, [qid]: true })); return }
+        setMarcadas((m) => { const a = new Set(m[qid] ?? []); a.add(letra); return { ...m, [qid]: a } })
     }
     function limpar(qid: number) {
         setMarcadas((m) => { const c = { ...m }; delete c[qid]; return c })
+        setForaDoCampo((f) => { const c = { ...f }; delete c[qid]; return c })
+    }
+
+    function respostasValidas(): Record<number, string> {
+        // 1 marcação, dentro do campo. Fora do campo ou dupla marcação = não conta (errada).
+        const r: Record<number, string> = {}
+        for (const q of qs!) {
+            const set = marcadas[q.id]
+            if (set && set.size === 1 && !foraDoCampo[q.id]) r[q.id] = [...set][0]
+        }
+        return r
+    }
+
+    async function iniciarComTempo() {
+        const r = await api.iniciarSimulado(exameId, minutos * 60)
+        setRun(r)
+        setMarcadas({}); setForaDoCampo({}); setResultado(null)
     }
 
     async function entregar() {
-        // envia só as questões com UMA marcação (dupla marcação = anulada, não conta)
-        const respostas: Record<number, string> = {}
-        for (const q of qs!) {
-            const set = marcadas[q.id]
-            if (set && set.size === 1) respostas[q.id] = [...set][0]
-        }
-        setResultado(await api.corrigir(exameId, respostas))
+        const respostas = respostasValidas()
+        if (run) setResultado(await api.entregarSimulado(run.simulation_id, respostas))
+        else setResultado(await api.corrigir(exameId, respostas))
     }
 
-    const anuladas = qs.filter((q) => (marcadas[q.id]?.size ?? 0) > 1).length
+    const anuladas = qs.filter((q) => (marcadas[q.id]?.size ?? 0) > 1 || foraDoCampo[q.id]).length
+    const mm = String(Math.floor(restante / 60)).padStart(2, "0")
+    const ss = String(restante % 60).padStart(2, "0")
 
     return (
         <div className="simulado">
@@ -76,6 +110,7 @@ function Simulado({ exameId }: { exameId: number }) {
                                 <li key={a.letra}><b>{a.letra})</b> <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(a.texto) }} /></li>
                             ))}
                         </ol>
+                        <Rascunho cor={corCaneta} />
                         {resultado && (
                             <p className={resultado.resultado[q.id] ? "acertou" : "errou"}>
                                 {resultado.resultado[q.id] ? "✓ acertou" : "✕ errou"}
@@ -87,32 +122,63 @@ function Simulado({ exameId }: { exameId: number }) {
             </div>
 
             <aside className="cartao-resposta">
+                {!run && !resultado && (
+                    <div className="config-teste">
+                        <h3>Iniciar teste</h3>
+                        <label className="cfg">Tempo (min)
+                            <input type="number" min={1} value={minutos} onChange={(e) => setMinutos(Number(e.target.value))} />
+                        </label>
+                        <button className="entregar" onClick={iniciarComTempo}>▶ Iniciar simulado por tempo</button>
+                        <p className="regra">Ou preencha e entregue sem tempo, treinando.</p>
+                    </div>
+                )}
+
+                {run && !resultado && (
+                    <div className={`relogio ${restante < 60 ? "urgente" : ""}`}>⏱ {mm}:{ss}</div>
+                )}
+
                 <h3>Cartão-resposta</h3>
-                <p className="regra">Preencha o círculo <b>inteiro</b> com a caneta. Uma alternativa por questão. Dupla marcação anula.</p>
+                <div className="cfg-cartao">
+                    <label className="cfg">Tamanho do campo
+                        <input type="range" min={12} max={34} value={tamanhoBolha} onChange={(e) => setTamanhoBolha(Number(e.target.value))} />
+                        <span>{tamanhoBolha}px</span>
+                    </label>
+                    <div className="cfg-cor">
+                        Caneta:
+                        <button className={corCaneta === "#0b3d91" ? "sel" : ""} style={{ background: "#0b3d91" }} onClick={() => setCorCaneta("#0b3d91")} title="azul" />
+                        <button className={corCaneta === "#111111" ? "sel" : ""} style={{ background: "#111111" }} onClick={() => setCorCaneta("#111111")} title="preto" />
+                    </div>
+                </div>
+                <p className="regra">Preencha o círculo <b>inteiro</b> com a caneta. Marcar fora do campo, em branco ou dupla marcação = questão errada.</p>
+
                 <div className="folha">
                     {qs.map((q) => {
                         const set = marcadas[q.id] ?? new Set()
-                        const dupla = set.size > 1
+                        const problema = set.size > 1 || foraDoCampo[q.id]
                         return (
-                            <div key={q.id} className={`linha-cartao ${dupla ? "anulada" : ""}`}>
+                            <div key={q.id} className={`linha-cartao ${problema ? "anulada" : ""}`}>
                                 <span className="num">{q.numero}</span>
                                 {LETRAS.map((L) => (
-                                    <Bolha key={L} marcada={set.has(L)} aoPreencher={() => preencher(q.id, L)} bloqueado={!!resultado} />
+                                    <Bolha key={L} tamanho={tamanhoBolha} cor={corCaneta} marcada={set.has(L)}
+                                           bloqueado={!!resultado} aoMarcar={(fora) => marcar(q.id, L, fora)} />
                                 ))}
-                                {set.size > 0 && !resultado && <button className="limpa" onClick={() => limpar(q.id)} title="limpar">↺</button>}
+                                {(set.size > 0 || foraDoCampo[q.id]) && !resultado &&
+                                    <button className="limpa" onClick={() => limpar(q.id)} title="riscar/limpar">↺</button>}
                             </div>
                         )
                     })}
                 </div>
+
                 {!resultado ? (
                     <>
-                        {anuladas > 0 && <p className="aviso">⚠ {anuladas} questão(ões) com dupla marcação serão anuladas.</p>}
+                        {anuladas > 0 && <p className="aviso">⚠ {anuladas} questão(ões) inválidas (fora do campo/dupla).</p>}
                         <button className="entregar" onClick={entregar}>Entregar cartão</button>
                     </>
                 ) : (
                     <div className="placar">
                         <strong>{resultado.acertos}/{resultado.total}</strong> acertos
                         <span>({resultado.respondidas} respondidas)</span>
+                        {"encerrado_no_prazo" in resultado && !resultado.encerrado_no_prazo && <span className="aviso">entregue após o prazo</span>}
                     </div>
                 )}
             </aside>
@@ -120,39 +186,84 @@ function Simulado({ exameId }: { exameId: number }) {
     )
 }
 
-// Bolha preenchível à caneta: o traço pinta o círculo; só conta como marcada
-// quando preenchida o bastante (regra do cartão-resposta: preencher todo o círculo).
-function Bolha({ marcada, aoPreencher, bloqueado }: { marcada: boolean; aoPreencher: () => void; bloqueado: boolean }) {
+// Rascunho por questão: papel para rabiscar com a caneta (mesa digitalizadora/mouse).
+function Rascunho({ cor }: { cor: string }) {
     const ref = useRef<HTMLCanvasElement>(null)
-    const pintando = useRef(false)
+    const desenhando = useRef(false)
+    const [aberto, setAberto] = useState(false)
+
+    function ponto(e: React.PointerEvent) {
+        const c = ref.current!; const r = c.getBoundingClientRect()
+        return { x: e.clientX - r.left, y: e.clientY - r.top }
+    }
+    function down(e: React.PointerEvent) {
+        desenhando.current = true; (e.target as HTMLElement).setPointerCapture(e.pointerId)
+        const ctx = ref.current!.getContext("2d")!; const p = ponto(e)
+        ctx.strokeStyle = cor; ctx.lineWidth = 2; ctx.lineCap = "round"
+        ctx.beginPath(); ctx.moveTo(p.x, p.y)
+    }
+    function move(e: React.PointerEvent) {
+        if (!desenhando.current) return
+        const ctx = ref.current!.getContext("2d")!; const p = ponto(e)
+        ctx.lineTo(p.x, p.y); ctx.stroke()
+    }
+    function limpar() {
+        const c = ref.current!; c.getContext("2d")!.clearRect(0, 0, c.width, c.height)
+    }
+
+    return (
+        <div className="rascunho">
+            <button className="link" onClick={() => setAberto((v) => !v)}>{aberto ? "▾ fechar rascunho" : "✏ rascunho"}</button>
+            {aberto && (
+                <div>
+                    <canvas ref={ref} width={520} height={180} className="papel"
+                        onPointerDown={down} onPointerMove={move} onPointerUp={() => (desenhando.current = false)} />
+                    <button className="link" onClick={limpar}>limpar rascunho</button>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// Bolha preenchível à caneta, com tamanho configurável. Detecta pintura FORA do
+// círculo pequeno (marca inválida). Só conta como marcada com preenchimento real.
+function Bolha({ tamanho, cor, marcada, bloqueado, aoMarcar }: {
+    tamanho: number; cor: string; marcada: boolean; bloqueado: boolean; aoMarcar: (fora: boolean) => void
+}) {
+    const ref = useRef<HTMLCanvasElement>(null)
+    const desenhando = useRef(false)
+    const raio = tamanho / 2 - 1
 
     useEffect(() => {
-        if (marcada && ref.current) {
-            const ctx = ref.current.getContext("2d")!
-            ctx.fillStyle = "#16181d"
-            ctx.beginPath(); ctx.arc(14, 14, 12, 0, Math.PI * 2); ctx.fill()
-        }
-    }, [marcada])
+        const c = ref.current!; const ctx = c.getContext("2d")!
+        ctx.clearRect(0, 0, tamanho, tamanho)
+        if (marcada) { ctx.fillStyle = cor; ctx.beginPath(); ctx.arc(tamanho / 2, tamanho / 2, raio, 0, Math.PI * 2); ctx.fill() }
+    }, [marcada, tamanho, cor, raio])
 
     function pintar(e: React.PointerEvent) {
         if (bloqueado || marcada) return
         const c = ref.current!; const r = c.getBoundingClientRect()
+        const x = e.clientX - r.left, y = e.clientY - r.top
         const ctx = c.getContext("2d")!
-        ctx.fillStyle = "#16181d"
-        ctx.beginPath(); ctx.arc(e.clientX - r.left, e.clientY - r.top, 5, 0, Math.PI * 2); ctx.fill()
-        // mede quanto do círculo foi pintado
-        const img = ctx.getImageData(0, 0, 28, 28).data
-        let pint = 0
-        for (let i = 3; i < img.length; i += 4) if (img[i] > 0) pint++
-        if (pint / (28 * 28) > 0.5) aoPreencher()
+        ctx.fillStyle = cor; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill()
+        // distância ao centro: pintou fora do círculo pequeno?
+        const dist = Math.hypot(x - tamanho / 2, y - tamanho / 2)
+        if (dist > raio + 2) { aoMarcar(true); return }  // marca fora = inválida
+        // quanto do círculo foi pintado
+        const img = ctx.getImageData(0, 0, tamanho, tamanho).data
+        let pint = 0, area = 0
+        for (let i = 0; i < tamanho * tamanho; i++) {
+            const px = i % tamanho, py = Math.floor(i / tamanho)
+            if (Math.hypot(px - tamanho / 2, py - tamanho / 2) <= raio) { area++; if (img[i * 4 + 3] > 0) pint++ }
+        }
+        if (area && pint / area > 0.6) aoMarcar(false)
     }
 
     return (
-        <canvas
-            ref={ref} width={28} height={28} className={`bolha ${marcada ? "cheia" : ""}`}
-            onPointerDown={(e) => { pintando.current = true; (e.target as HTMLElement).setPointerCapture(e.pointerId); pintar(e) }}
-            onPointerMove={(e) => pintando.current && pintar(e)}
-            onPointerUp={() => (pintando.current = false)}
-        />
+        <canvas ref={ref} width={tamanho} height={tamanho} className="bolha"
+            style={{ width: tamanho, height: tamanho }}
+            onPointerDown={(e) => { desenhando.current = true; (e.target as HTMLElement).setPointerCapture(e.pointerId); pintar(e) }}
+            onPointerMove={(e) => desenhando.current && pintar(e)}
+            onPointerUp={() => (desenhando.current = false)} />
     )
 }
