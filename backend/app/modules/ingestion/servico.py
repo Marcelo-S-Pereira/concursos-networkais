@@ -39,6 +39,21 @@ def _texto_limpo(paginas: list[str]) -> str:
     return "\n".join(linhas)
 
 
+def _renderizar_todas_paginas(caminho_pdf: str, exam_id: int, paginas_texto: list[str]) -> None:
+    """Renderiza cada página para PNG e salva o texto limpo (.txt) ao lado, para
+    o usuário ver a origem e copiar o texto de qualquer questão."""
+    FIGURAS_DIR.mkdir(parents=True, exist_ok=True)
+    pdf = pdfium.PdfDocument(caminho_pdf)
+    try:
+        for i in range(len(pdf)):
+            base = FIGURAS_DIR / f"exam{exam_id}_pagina{i}"
+            pdf[i].render(scale=2).to_pil().save(base.with_suffix(".png"))
+            texto = "\n".join(ln for ln in paginas_texto[i].split("\n") if not RUIDO.search(ln))
+            base.with_suffix(".txt").write_text(texto, encoding="utf-8")
+    finally:
+        pdf.close()
+
+
 def _renderizar_pagina(caminho_pdf: str, pagina: int, destino: Path) -> None:
     """Renderiza a página para o PNG de exibição E guarda um `_original.png`
     ao lado (nunca sobrescrito pelo recorte) para o botão Restaurar."""
@@ -74,6 +89,8 @@ def ingerir(
     db.add(exam)
     db.flush()  # gera exam.id
 
+    _renderizar_todas_paginas(caminho_prova, exam.id, paginas_prova)
+
     disciplinas = disciplinas or {}
     for q in questoes:
         gabarito = respostas.get(q.numero)
@@ -95,6 +112,7 @@ def ingerir(
         questao = Question(
             exam_id=exam.id,
             numero=q.numero,
+            pagina=q.pagina,
             disciplina=disciplinas.get(q.numero, ""),
             enunciado=q.enunciado + (f"\n[figura: {figura_path}]" if figura_path else ""),
             gabarito=gabarito,

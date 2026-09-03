@@ -40,7 +40,7 @@ export type DadosCadastro = { nome: string; email: string; cpf: string; telefone
 
 export type Choice = { letra: string; texto: string }
 export type Questao = {
-    id: number; numero: number; disciplina: string; enunciado: string
+    id: number; numero: number; pagina: number; disciplina: string; enunciado: string
     gabarito: string | null; tem_figura: boolean; confianca: number; aviso: string
     revisada: boolean; descartada: boolean; alternativas: Choice[]
 }
@@ -78,6 +78,11 @@ export const api = {
         const res = await fetch(`/api/v1/exames/questoes/${qid}/figura`, { method: "POST", credentials: "include", body: fd })
         if (!res.ok) throw new Error("Falha ao salvar recorte")
         return res.json()
+    },
+    paginaImagemUrl: (examId: number, n: number) => `/api/v1/exames/${examId}/pagina/${n}/imagem`,
+    paginaTexto: async (examId: number, n: number) => {
+        const res = await fetch(`/api/v1/exames/${examId}/pagina/${n}/texto`, { credentials: "include" })
+        return res.ok ? res.text() : ""
     },
     restaurarFigura: (qid: number) => pedir<{ ok: boolean }>(`/exames/questoes/${qid}/figura/restaurar`, { method: "POST" }),
     corrigir: (examId: number, respostas: Record<number, string>) =>

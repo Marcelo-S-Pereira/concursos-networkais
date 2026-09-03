@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +23,7 @@ class ChoiceOut(BaseModel):
 class QuestaoOut(BaseModel):
     id: int
     numero: int
+    pagina: int
     disciplina: str
     enunciado: str
     gabarito: str | None
@@ -55,7 +56,7 @@ class QuestaoPatch(BaseModel):
 
 def _para_saida(q: Question) -> QuestaoOut:
     return QuestaoOut(
-        id=q.id, numero=q.numero, disciplina=q.disciplina, enunciado=q.enunciado,
+        id=q.id, numero=q.numero, pagina=q.pagina, disciplina=q.disciplina, enunciado=q.enunciado,
         gabarito=q.gabarito, tem_figura=q.tem_figura, confianca=q.confianca, aviso=q.aviso,
         revisada=q.revisada, descartada=q.descartada,
         alternativas=[ChoiceOut(letra=c.letra, texto=c.texto) for c in q.alternativas],
@@ -196,3 +197,21 @@ def restaurar_figura(qid: int, _: User = Depends(usuario_atual), db: Session = D
         raise HTTPException(status_code=404, detail="Página original não disponível.")
     shutil.copyfile(original, exibicao)
     return {"ok": True}
+
+
+@router.get("/{exam_id}/pagina/{n}/imagem")
+def pagina_imagem(exam_id: int, n: int, _: User = Depends(usuario_atual)):
+    """Imagem da página do PDF de origem — para conferir a transcrição."""
+    caminho = FIGURAS_DIR / f"exam{exam_id}_pagina{n}.png"
+    if not caminho.exists():
+        raise HTTPException(status_code=404, detail="Página não renderizada.")
+    return FileResponse(caminho, media_type="image/png")
+
+
+@router.get("/{exam_id}/pagina/{n}/texto")
+def pagina_texto(exam_id: int, n: int, _: User = Depends(usuario_atual)):
+    """Texto extraído da página — selecionável, para copiar e colar nos campos."""
+    caminho = FIGURAS_DIR / f"exam{exam_id}_pagina{n}.txt"
+    if not caminho.exists():
+        raise HTTPException(status_code=404, detail="Texto da página não disponível.")
+    return PlainTextResponse(caminho.read_text(encoding="utf-8"))

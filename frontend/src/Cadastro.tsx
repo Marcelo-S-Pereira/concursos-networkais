@@ -35,15 +35,24 @@ function Lista({ exameId }: { exameId: number }) {
     useEffect(() => { api.questoes(exameId).then(setQs).catch(() => setQs([])) }, [exameId])
     if (!qs) return <p className="neutro">Carregando questões…</p>
     const atualizar = (q: Questao) => setQs((l) => l!.map((x) => (x.id === q.id ? q : x)))
-    return <div>{qs.filter((q) => !q.descartada).map((q) => <CartaoCadastro key={q.id} q={q} aoMudar={atualizar} />)}</div>
+    return <div>{qs.filter((q) => !q.descartada).map((q) => <CartaoCadastro key={q.id} examId={exameId} q={q} aoMudar={atualizar} />)}</div>
 }
 
-function CartaoCadastro({ q, aoMudar }: { q: Questao; aoMudar: (q: Questao) => void }) {
+function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; aoMudar: (q: Questao) => void }) {
     const [enunciado, setEnunciado] = useState(q.enunciado)
     const [alts, setAlts] = useState<Record<string, string>>(Object.fromEntries(q.alternativas.map((a) => [a.letra, a.texto])))
     const [verGabarito, setVerGabarito] = useState(false)
     const [recortando, setRecortando] = useState(false)
     const [versaoImg, setVersaoImg] = useState(Date.now())
+    const [verPagina, setVerPagina] = useState(false)
+    const [recortePag, setRecortePag] = useState(false)
+    const [textoPag, setTextoPag] = useState<string>("")
+
+    async function alternarPagina() {
+        const abrir = !verPagina
+        setVerPagina(abrir)
+        if (abrir && !textoPag) setTextoPag(await api.paginaTexto(examId, q.pagina))
+    }
     const [salvando, setSalvando] = useState(false)
 
     async function salvar(extra?: { revisada?: boolean }) {
@@ -63,6 +72,27 @@ function CartaoCadastro({ q, aoMudar }: { q: Questao; aoMudar: (q: Questao) => v
                 {q.revisada && <span className="revisada">✓ conferida</span>}
             </header>
             {q.aviso && <p className="aviso">⚠ {q.aviso}</p>}
+
+            <div className="origem">
+                <button className="link" onClick={alternarPagina}>
+                    {verPagina ? "▾ ocultar página de origem" : "▸ ver página de origem (pág. " + (q.pagina + 1) + ")"}
+                </button>
+                {verPagina && (
+                    <div className="origem-conteudo">
+                        <div className="origem-img">
+                            <button className="secundario" onClick={() => setRecortePag((v) => !v)}>
+                                {recortePag ? "Fechar recorte" : "✂ Recortar desta página"}
+                            </button>
+                            {recortePag
+                                ? <RecortadorPagina examId={examId} pagina={q.pagina} qid={q.id} aoConcluir={() => { setRecortePag(false); setVersaoImg(Date.now()) }} />
+                                : <img className="figura" src={api.paginaImagemUrl(examId, q.pagina)} alt={`página ${q.pagina + 1}`} />}
+                        </div>
+                        <label className="campo">Texto extraído da página (selecione e copie para corrigir os campos)
+                            <textarea className="texto-origem" value={textoPag} readOnly rows={10} onFocus={(e) => e.target.select()} />
+                        </label>
+                    </div>
+                )}
+            </div>
 
             {q.tem_figura && (
                 <div className="figura-bloco">
@@ -106,8 +136,13 @@ function CartaoCadastro({ q, aoMudar }: { q: Questao; aoMudar: (q: Questao) => v
     )
 }
 
+// Recorta a partir da imagem de uma PÁGINA específica (qualquer questão).
+function RecortadorPagina({ examId, pagina, qid, aoConcluir }: { examId: number; pagina: number; qid: number; aoConcluir: () => void }) {
+    return <Recortador qid={qid} srcUrl={api.paginaImagemUrl(examId, pagina)} aoConcluir={aoConcluir} />
+}
+
 // Ferramenta de recorte: arrasta um retângulo sobre a página; ao soltar, corta e envia.
-function Recortador({ qid, aoConcluir }: { qid: number; aoConcluir: () => void }) {
+function Recortador({ qid, srcUrl, aoConcluir }: { qid: number; srcUrl?: string; aoConcluir: () => void }) {
     const imgRef = useRef<HTMLImageElement>(null)
     const [sel, setSel] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
     const arrasto = useRef<{ x0: number; y0: number } | null>(null)
@@ -148,7 +183,7 @@ function Recortador({ qid, aoConcluir }: { qid: number; aoConcluir: () => void }
         <div className="recortador">
             <p className="dica">Arraste sobre a figura para selecionar; depois clique em Recortar.</p>
             <div className="area-recorte" onPointerDown={down} onPointerMove={move} onPointerUp={up}>
-                <img ref={imgRef} src={`${api.figuraUrl(qid)}?t=${Date.now()}`} alt="página" draggable={false} />
+                <img ref={imgRef} src={srcUrl ?? `${api.figuraUrl(qid)}?t=${Date.now()}`} alt="página" draggable={false} />
                 {sel && <div className="selecao" style={{ left: sel.x, top: sel.y, width: sel.w, height: sel.h }} />}
             </div>
             <button disabled={salvando || !sel} onClick={recortar}>{salvando ? "Recortando…" : "Recortar e integrar"}</button>

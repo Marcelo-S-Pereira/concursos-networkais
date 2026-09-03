@@ -212,3 +212,10 @@ button.perigo { background: transparent; color: var(--falha); border: 1px solid 
 .entregar { width: 100%; margin-top: 12px; }
 .placar { margin-top: 12px; text-align: center; font-size: 1.1rem; }
 .placar span { display: block; color: var(--suave); font-size: .8rem; }
+
+/* --- página de origem no cadastro --- */
+.origem { margin: 6px 0 10px; }
+.origem-conteudo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+@media (max-width: 720px) { .origem-conteudo { grid-template-columns: 1fr; } }
+.origem-img img { max-width: 100%; border: 1px solid var(--borda); border-radius: 8px; }
+.texto-origem { font-family: monospace; font-size: .78rem; line-height: 1.4; white-space: pre-wrap; }
