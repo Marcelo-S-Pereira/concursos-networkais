@@ -45,9 +45,7 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
     const [recortando, setRecortando] = useState(false)
     const [versaoImg, setVersaoImg] = useState(Date.now())
     const [verPagina, setVerPagina] = useState(false)
-    const [recortePag, setRecortePag] = useState(false)
     const [textoPag, setTextoPag] = useState<string>("")
-    const [verImg, setVerImg] = useState(false)
 
     async function alternarPagina() {
         const abrir = !verPagina
@@ -76,31 +74,19 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
 
             <div className="origem">
                 <button className="link" onClick={alternarPagina}>
-                    {verPagina ? "▾ ocultar página de origem" : `▸ ver página de origem (pág. ${q.pagina + 1})`}
+                    {verPagina ? "▾ ocultar texto da página" : `▸ ver texto da página de origem (pág. ${q.pagina + 1})`}
                 </button>
                 {verPagina && (
                     <div className="origem-conteudo-texto">
-                        <p className="dica">Texto real do PDF (não é print) — selecione e copie para corrigir os campos.</p>
-                        <textarea className="texto-origem" value={textoPag} readOnly rows={12} onFocus={(e) => e.target.select()} />
-                        <button className="link" onClick={() => setVerImg((v) => !v)}>
-                            {verImg ? "ocultar imagem da página" : "ver imagem da página (para conferir figura/layout)"}
-                        </button>
-                        {verImg && (
-                            <div className="origem-img">
-                                <button className="secundario" onClick={() => setRecortePag((v) => !v)}>
-                                    {recortePag ? "Fechar recorte" : "✂ Recortar figura desta página"}
-                                </button>
-                                {recortePag
-                                    ? <RecortadorPagina examId={examId} pagina={q.pagina} qid={q.id} aoConcluir={() => { setRecortePag(false); setVersaoImg(Date.now()) }} />
-                                    : <img className="figura" src={api.paginaImagemUrl(examId, q.pagina)} alt={`página ${q.pagina + 1}`} />}
-                            </div>
-                        )}
+                        <p className="dica">Texto real do PDF, em colunas — selecione e copie para corrigir os campos. Não é imagem.</p>
+                        <textarea className="texto-origem" value={textoPag} readOnly rows={16} onFocus={(e) => e.target.select()} />
                     </div>
                 )}
             </div>
 
             {q.tem_figura && (
                 <div className="figura-bloco">
+                    <p className="dica">Esta questão tem figura. A imagem abaixo é só para recortar a figura.</p>
                     <div className="linha-acoes">
                         <button className="secundario" onClick={() => setRecortando((v) => !v)}>
                             {recortando ? "Fechar recorte" : "✂ Recortar figura da página"}
@@ -139,11 +125,6 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
             </div>
         </article>
     )
-}
-
-// Recorta a partir da imagem de uma PÁGINA específica (qualquer questão).
-function RecortadorPagina({ examId, pagina, qid, aoConcluir }: { examId: number; pagina: number; qid: number; aoConcluir: () => void }) {
-    return <Recortador qid={qid} srcUrl={api.paginaImagemUrl(examId, pagina)} aoConcluir={aoConcluir} />
 }
 
 // Ferramenta de recorte: arrasta um retângulo sobre a página; ao soltar, corta e envia.

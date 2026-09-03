@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Choice, Exam, Question
 from app.modules.ingestion.gabarito_parser import parse_respostas
 from app.modules.ingestion.prova_parser import parse_prova
+from app.modules.ingestion.texto_colunas import texto_por_colunas
 
 RUIDO = re.compile(r"pcimarkpci|pciconcursos")
 # backend/app/modules/ingestion/servico.py → parents[3] = backend → .parent = raiz do projeto
@@ -48,8 +49,7 @@ def _renderizar_todas_paginas(caminho_pdf: str, exam_id: int, paginas_texto: lis
         for i in range(len(pdf)):
             base = FIGURAS_DIR / f"exam{exam_id}_pagina{i}"
             pdf[i].render(scale=2).to_pil().save(base.with_suffix(".png"))
-            texto = "\n".join(ln for ln in paginas_texto[i].split("\n") if not RUIDO.search(ln))
-            base.with_suffix(".txt").write_text(texto, encoding="utf-8")
+            base.with_suffix(".txt").write_text(texto_por_colunas(caminho_pdf, i), encoding="utf-8")
     finally:
         pdf.close()
 
