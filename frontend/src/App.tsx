@@ -23,6 +23,13 @@ type Aba = "caderno" | "cadastro" | "ia"
 function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
     const [aba, setAba] = useState<Aba>("caderno")
     const admin = usuario.role === "superadmin"
+    const [modo, setModo] = useState<"celular" | "computador">(() => {
+        try { return (localStorage.getItem("modo_layout") as "celular" | "computador") || "computador" } catch { return "computador" }
+    })
+    function trocarModo(m: "celular" | "computador") {
+        setModo(m)
+        try { localStorage.setItem("modo_layout", m) } catch { /* ignora */ }
+    }
 
     async function sair() {
         await api.logout().catch(() => {})
@@ -30,13 +37,19 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
     }
 
     return (
-        <main className="tela larga">
+        <main className={`tela ${modo === "computador" ? "modo-computador" : "modo-celular"}`}>
             <header className="topo">
                 <div>
                     <h1>APP Concursos</h1>
                     <p className="sub">{usuario.nome}</p>
                 </div>
-                <button className="secundario" onClick={sair}>Sair</button>
+                <div className="topo-acoes">
+                    <div className="chave-modo" role="group" aria-label="Modo de tela">
+                        <button className={modo === "celular" ? "on" : ""} onClick={() => trocarModo("celular")} title="Celular">📱</button>
+                        <button className={modo === "computador" ? "on" : ""} onClick={() => trocarModo("computador")} title="Computador/Tablet">🖥</button>
+                    </div>
+                    <button className="secundario" onClick={sair}>Sair</button>
+                </div>
             </header>
 
             <nav className="abas">
