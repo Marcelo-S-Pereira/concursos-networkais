@@ -155,7 +155,9 @@ class ResultadoOut(BaseModel):
     total: int
     respondidas: int
     acertos: int
+    percentual_bruto: float
     resultado: dict[int, bool]  # {question_id: acertou}
+    por_enfase: list[dict]
 
 
 @router.post("/{exam_id}/corrigir", response_model=ResultadoOut)
@@ -167,20 +169,26 @@ def corrigir_simulado(
     exam = db.get(Exam, exam_id)
     if not exam:
         raise HTTPException(status_code=404, detail="Prova não encontrada.")
+    from app.modules.desempenho.mastery import por_enfase as calc_enfase
     questoes = {q.id: q for q in exam.questoes if not q.descartada}
     resultado: dict[int, bool] = {}
+    itens: list[tuple[str, bool]] = []
     acertos = 0
     for qid, questao in questoes.items():
         marcada = dados.respostas.get(qid)
         acertou = marcada is not None and questao.gabarito is not None and marcada.upper() == questao.gabarito
         resultado[qid] = acertou
+        itens.append((questao.disciplina, acertou))
         if acertou:
             acertos += 1
+    total = len(questoes)
     return ResultadoOut(
-        total=len(questoes),
+        total=total,
         respondidas=len([qid for qid in questoes if dados.respostas.get(qid)]),
         acertos=acertos,
+        percentual_bruto=round(acertos / total * 100, 1) if total else 0.0,
         resultado=resultado,
+        por_enfase=calc_enfase(itens),
     )
 
 

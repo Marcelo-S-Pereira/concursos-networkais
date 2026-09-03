@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import usuario_atual
 from app.db.models import Exam, SimulationAnswer, SimulationRun, User
 from app.db.session import get_db
+from app.modules.desempenho.mastery import por_enfase
 
 router = APIRouter(prefix="/simulado")
 
@@ -41,6 +42,7 @@ class ResultadoOut(BaseModel):
     percentual_bruto: float
     encerrado_no_prazo: bool
     resultado: dict[int, bool]
+    por_enfase: list[dict]
 
 
 @router.post("/iniciar", response_model=RunOut)
@@ -78,6 +80,7 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
     exam = db.get(Exam, run.exam_id)
     questoes = {q.id: q for q in exam.questoes if not q.descartada}
     resultado: dict[int, bool] = {}
+    itens_enfase: list[tuple[str, bool]] = []
     acertos = respondidas = 0
     for qid, q in questoes.items():
         letra = (dados.respostas.get(qid) or "").upper() or None
@@ -87,6 +90,7 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
         resultado[qid] = correta
         if correta:
             acertos += 1
+        itens_enfase.append((q.disciplina, correta))
         db.add(SimulationAnswer(run_id=run.id, question_id=qid, letra=letra, correta=correta))
 
     run.status = "finished"
@@ -98,5 +102,5 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
     return ResultadoOut(
         acertos=acertos, total=total, respondidas=respondidas, em_branco=total - respondidas,
         percentual_bruto=round(acertos / total * 100, 1) if total else 0.0,
-        encerrado_no_prazo=no_prazo, resultado=resultado,
+        encerrado_no_prazo=no_prazo, resultado=resultado, por_enfase=por_enfase(itens_enfase),
     )

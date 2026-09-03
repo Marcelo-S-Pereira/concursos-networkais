@@ -45,9 +45,10 @@ export type Questao = {
     revisada: boolean; descartada: boolean; alternativas: Choice[]
 }
 export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
-export type ResultadoSimulado = { total: number; respondidas: number; acertos: number; resultado: Record<number, boolean> }
+export type ResultadoSimulado = { total: number; respondidas: number; acertos: number; percentual_bruto: number; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[] }
 export type SimRun = { simulation_id: number; started_at: string; deadline_at: string; duration_seconds: number; question_count: number; status: string }
-export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean> }
+export type EnfaseDesempenho = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number }
+export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[] }
 export type ConexaoIA = {
     id: number; nome: string; endpoint: string; modelo: string; categoria: string
     tipo_deploy: string; ativa: boolean; ordem_fallback: number | null

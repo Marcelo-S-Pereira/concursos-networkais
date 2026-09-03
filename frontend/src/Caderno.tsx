@@ -1,8 +1,13 @@
 import DOMPurify from "dompurify"
 import { useEffect, useRef, useState } from "react"
-import { api, type Exame, type Questao, type SimResultado, type SimRun } from "./api"
+import { api, type Exame, type Questao, type ResultadoSimulado, type SimResultado, type SimRun } from "./api"
 
 const LETRAS = ["A", "B", "C", "D", "E"]
+const MASTERY_ROTULO: Record<string, string> = {
+    NOT_TESTED: "não testado", WEAK: "fraco", UNSTABLE: "instável",
+    CONSISTENT: "consistente", STRONG: "forte", CONSOLIDATED: "consolidado", FORGETTING: "esquecendo",
+}
+function rotuloMastery(m: string) { return MASTERY_ROTULO[m] ?? m.toLowerCase() }
 
 export default function Caderno() {
     const [exames, setExames] = useState<Exame[] | null>(null)
@@ -32,7 +37,7 @@ function Simulado({ exameId }: { exameId: number }) {
     const [qs, setQs] = useState<Questao[] | null>(null)
     const [marcadas, setMarcadas] = useState<Record<number, Set<string>>>({})
     const [foraDoCampo, setForaDoCampo] = useState<Record<number, boolean>>({})
-    const [resultado, setResultado] = useState<SimResultado | { acertos: number; total: number; respondidas: number; resultado: Record<number, boolean> } | null>(null)
+    const [resultado, setResultado] = useState<SimResultado | ResultadoSimulado | null>(null)
 
     // configurações do cartão
     const [tamanhoBolha, setTamanhoBolha] = useState(22)  // px — o usuário controla
@@ -175,10 +180,26 @@ function Simulado({ exameId }: { exameId: number }) {
                         <button className="entregar" onClick={entregar}>Entregar cartão</button>
                     </>
                 ) : (
-                    <div className="placar">
-                        <strong>{resultado.acertos}/{resultado.total}</strong> acertos
-                        <span>({resultado.respondidas} respondidas)</span>
-                        {"encerrado_no_prazo" in resultado && !resultado.encerrado_no_prazo && <span className="aviso">entregue após o prazo</span>}
+                    <div>
+                        <div className="placar">
+                            <strong>{resultado.acertos}/{resultado.total}</strong> acertos
+                            <span>({resultado.respondidas} respondidas · {resultado.percentual_bruto}%)</span>
+                            {"encerrado_no_prazo" in resultado && !resultado.encerrado_no_prazo && <span className="aviso">entregue após o prazo</span>}
+                        </div>
+                        {"por_enfase" in resultado && (
+                            <div className="desempenho">
+                                <h4>Desempenho por ênfase</h4>
+                                {resultado.por_enfase.map((e) => (
+                                    <div key={e.enfase} className="linha-enfase">
+                                        <span className="enf-nome">{e.enfase}</span>
+                                        <span className="enf-num">{e.acertos}/{e.total}</span>
+                                        <div className="barra"><div className="preenche" style={{ width: `${e.percentual}%` }} /></div>
+                                        <span className="enf-pct">{e.percentual}%</span>
+                                        <span className={`mastery ${e.mastery.toLowerCase()}`}>{rotuloMastery(e.mastery)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </aside>
