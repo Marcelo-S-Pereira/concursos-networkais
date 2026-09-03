@@ -361,3 +361,11 @@ button.ia:hover { background: #5b21b6; }
 .duas-colunas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .duas-colunas { grid-template-columns: 1fr; } }
 .questao-img { max-width: 100%; }
+
+/* --- tutor: explicação no resultado --- */
+.pos-resultado { margin-top: 8px; }
+.explicacao { margin-top: 8px; padding: 12px; border: 1px solid var(--borda); border-radius: 10px; background: var(--cartao); font-size: .9rem; line-height: 1.5; }
+.explicacao p { margin: 0 0 10px; }
+.tag-erro { font-size: .68rem; background: var(--suave); color: #fff; padding: 1px 7px; border-radius: 20px; }
+.macete { border-left: 3px solid #6d28d9; padding-left: 10px; }
+.macete ol { margin: 6px 0; padding-left: 20px; }

@@ -31,7 +31,14 @@ async function pedir<T>(caminho: string, init?: RequestInit): Promise<T> {
         const corpo = await res.json().catch(() => null)
         const detalhe = corpo?.detail
         // O FastAPI devolve lista de erros quando a validação do schema falha.
-        const mensagem = Array.isArray(detalhe) ? (detalhe[0]?.msg ?? "Dados inválidos.") : (detalhe ?? `Erro ${res.status}`)
+        let mensagem: string
+        if (Array.isArray(detalhe)) {
+            const e = detalhe[0]
+            const campo = Array.isArray(e?.loc) ? e.loc[e.loc.length - 1] : ""
+            mensagem = campo ? `Campo "${campo}": ${e?.msg ?? "inválido"}` : (e?.msg ?? "Dados inválidos.")
+        } else {
+            mensagem = detalhe ?? `Erro ${res.status}`
+        }
         throw new ApiError(res.status, mensagem)
     }
     return res.status === 204 ? (undefined as T) : res.json()
@@ -52,6 +59,11 @@ export type EnfaseDesempenho = { enfase: string; acertos: number; total: number;
 export type StatEnfase = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; enfase: string; amostra: number | null; acerto_pct: number | null; fonte: string; tipo_fonte: string; status: string }
 export type StatEnfaseInput = Omit<StatEnfase, "id">
 export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[] }
+export type Explicacao = {
+    correct: boolean; error_type: string; diagnosis: string; mini_lesson: string
+    review_recommendation: string
+    memory_trick: { memory_hook: string; rapid_rule: string; steps: string[]; applies_when: string; warning: string }
+}
 export type ConexaoIA = {
     id: number; nome: string; endpoint: string; modelo: string; categoria: string
     tipo_deploy: string; ativa: boolean; ordem_fallback: number | null
@@ -96,6 +108,8 @@ export const api = {
         const res = await fetch(`/api/v1/exames/${examId}/pagina/${n}/texto`, { credentials: "include" })
         return res.ok ? res.text() : ""
     },
+    explicarIA: (qid: number, student_answer: string | null) =>
+        pedir<Explicacao>(`/exames/questoes/${qid}/explicar`, { method: "POST", body: JSON.stringify({ student_answer }) }),
     transcreverIA: (qid: number) => pedir<{ enunciado: string; alternativas: Record<string, string> }>(`/exames/questoes/${qid}/transcrever`, { method: "POST" }),
     restaurarFigura: (qid: number) => pedir<{ ok: boolean }>(`/exames/questoes/${qid}/figura/restaurar`, { method: "POST" }),
     corrigir: (examId: number, respostas: Record<number, string>) =>

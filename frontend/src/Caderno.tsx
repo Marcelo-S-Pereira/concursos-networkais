@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify"
 import { useEffect, useRef, useState } from "react"
-import { api, type Exame, type Questao, type ResultadoSimulado, type SimResultado, type SimRun } from "./api"
+import { api, type Exame, type Explicacao, type Questao, type ResultadoSimulado, type SimResultado, type SimRun } from "./api"
 
 const LETRAS = ["A", "B", "C", "D", "E"]
 const MASTERY_ROTULO: Record<string, string> = {
@@ -114,7 +114,7 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                 {qs.map((q) => (
                     <article key={q.id} className="q-prova">
                         <header><strong>{q.numero}</strong> <span className="disc">{q.disciplina}</span></header>
-                        {q.modo_exibicao === "imagem" ? (
+                        {q.modo_exibicao === "imagem" && q.tem_figura ? (
                             <img className="figura questao-img" src={api.figuraUrl(q.id)} alt={`questão ${q.numero}`} />
                         ) : (
                             <>
@@ -134,10 +134,13 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                         )}
                         <Rascunho cor={corCaneta} />
                         {resultado && (
-                            <p className={resultado.resultado[q.id] ? "acertou" : "errou"}>
-                                {resultado.resultado[q.id] ? "✓ acertou" : "✕ errou"}
-                                {" · "}<button className="link" onClick={() => alert(`Gabarito da questão ${q.numero}: ${q.gabarito}`)}>ver gabarito</button>
-                            </p>
+                            <div className="pos-resultado">
+                                <p className={resultado.resultado[q.id] ? "acertou" : "errou"}>
+                                    {resultado.resultado[q.id] ? "✓ acertou" : "✕ errou"}
+                                    {" · "}<button className="link" onClick={() => alert(`Gabarito da questão ${q.numero}: ${q.gabarito}`)}>ver gabarito</button>
+                                </p>
+                                <Explicar qid={q.id} respostaAluno={[...(marcadas[q.id] ?? [])][0] ?? null} />
+                            </div>
                         )}
                     </article>
                 ))}
@@ -326,6 +329,48 @@ function SeletorGrande({ cor, marcada, aoMarcar }: { cor: string; marcada: strin
                     {L}
                 </button>
             ))}
+        </div>
+    )
+}
+
+
+// Tutor IA: gera diagnóstico, mini-aula e macete para a questão (sob demanda).
+function Explicar({ qid, respostaAluno }: { qid: number; respostaAluno: string | null }) {
+    const [exp, setExp] = useState<Explicacao | null>(null)
+    const [carregando, setCarregando] = useState(false)
+    const [erro, setErro] = useState<string | null>(null)
+
+    async function pedir() {
+        setCarregando(true); setErro(null)
+        try { setExp(await api.explicarIA(qid, respostaAluno)) }
+        catch (e) { setErro(e instanceof Error ? e.message : "Falha na IA") }
+        finally { setCarregando(false) }
+    }
+
+    if (exp) {
+        const t = exp.memory_trick
+        return (
+            <div className="explicacao">
+                {exp.diagnosis && <p><b>Diagnóstico</b> <span className="tag-erro">{exp.error_type}</span><br />{exp.diagnosis}</p>}
+                {exp.mini_lesson && <p><b>Mini-aula</b><br />{exp.mini_lesson}</p>}
+                {(t.rapid_rule || t.steps.length > 0) && (
+                    <div className="macete">
+                        <b>Macete</b>
+                        {t.memory_hook && <p>🧠 {t.memory_hook}</p>}
+                        {t.rapid_rule && <p>⚡ {t.rapid_rule}</p>}
+                        {t.steps.length > 0 && <ol>{t.steps.map((p, i) => <li key={i}>{p}</li>)}</ol>}
+                        {t.applies_when && <p className="dica">Usar quando: {t.applies_when}</p>}
+                        {t.warning && <p className="dica">Cuidado: {t.warning}</p>}
+                    </div>
+                )}
+                {exp.review_recommendation && <p className="dica">Revisar: {exp.review_recommendation}</p>}
+            </div>
+        )
+    }
+    return (
+        <div>
+            <button className="ia" disabled={carregando} onClick={pedir}>{carregando ? "IA explicando…" : "✨ Explicar com IA"}</button>
+            {erro && <span className="falha"> {erro}</span>}
         </div>
     )
 }

@@ -86,7 +86,7 @@ def listar_questoes(exam_id: int, _: User = Depends(usuario_atual), db: Session 
 
 
 @router.patch("/questoes/{qid}", response_model=QuestaoOut)
-def editar_questao(qid: int, dados: QuestaoPatch, _: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+def editar_questao(qid: int, dados: QuestaoPatch, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     q = db.get(Question, qid)
     if not q:
         raise HTTPException(status_code=404, detail="Questão não encontrada.")
@@ -135,7 +135,7 @@ def figura(qid: int, _: User = Depends(usuario_atual), db: Session = Depends(get
 
 @router.post("/questoes/{qid}/figura")
 async def salvar_figura(
-    qid: int, arquivo: UploadFile, _: User = Depends(usuario_atual), db: Session = Depends(get_db)
+    qid: int, arquivo: UploadFile, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)
 ):
     """Recebe o RECORTE (PNG) feito na tela e o integra à questão como figura."""
     q = db.get(Question, qid)
@@ -200,7 +200,7 @@ def corrigir_simulado(
 
 
 @router.post("/questoes/{qid}/figura/restaurar")
-def restaurar_figura(qid: int, _: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+def restaurar_figura(qid: int, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     """Restaura a página original (desfaz o recorte), copiando o `_original.png`
     de volta para o PNG de exibição."""
     q = db.get(Question, qid)
@@ -215,7 +215,7 @@ def restaurar_figura(qid: int, _: User = Depends(usuario_atual), db: Session = D
 
 
 @router.get("/{exam_id}/pagina/{n}/imagem")
-def pagina_imagem(exam_id: int, n: int, _: User = Depends(usuario_atual)):
+def pagina_imagem(exam_id: int, n: int, _: User = Depends(apenas_superadmin)):
     """Imagem da página do PDF de origem — para conferir a transcrição."""
     caminho = FIGURAS_DIR / f"exam{exam_id}_pagina{n}.png"
     if not caminho.exists():
@@ -224,7 +224,7 @@ def pagina_imagem(exam_id: int, n: int, _: User = Depends(usuario_atual)):
 
 
 @router.get("/{exam_id}/pagina/{n}/texto")
-def pagina_texto(exam_id: int, n: int, _: User = Depends(usuario_atual)):
+def pagina_texto(exam_id: int, n: int, _: User = Depends(apenas_superadmin)):
     """Texto extraído da página — selecionável, para copiar e colar nos campos."""
     caminho = FIGURAS_DIR / f"exam{exam_id}_pagina{n}.txt"
     if not caminho.exists():
@@ -238,7 +238,7 @@ class TranscricaoOut(BaseModel):
 
 
 @router.post("/questoes/{qid}/transcrever", response_model=TranscricaoOut)
-def transcrever_com_ia(qid: int, _: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+def transcrever_com_ia(qid: int, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     """Sugere a transcrição da questão usando a IA cadastrada (LLM no texto, VLM
     na figura). NÃO salva — devolve para o usuário revisar e então salvar."""
     from app.modules.ai_registry.cliente import AiCallError
@@ -285,8 +285,12 @@ async def importar_caderno(
     pid = uuid.uuid4().hex
     caminho_prova = destino / f"{pid}_prova.pdf"
     caminho_gab = destino / f"{pid}_gabarito.pdf"
-    caminho_prova.write_bytes(await prova.read())
-    caminho_gab.write_bytes(await gabarito.read())
+    dados_prova = await prova.read()
+    dados_gab = await gabarito.read()
+    if len(dados_prova) > 32_000_000 or len(dados_gab) > 32_000_000:
+        raise HTTPException(status_code=413, detail="PDF grande demais (máx 32MB cada).")
+    caminho_prova.write_bytes(dados_prova)
+    caminho_gab.write_bytes(dados_gab)
 
     try:
         exam = ingerir(
@@ -310,3 +314,26 @@ def apagar_caderno(exam_id: int, _: User = Depends(apenas_superadmin), db: Sessi
     if exam:
         db.delete(exam)
         db.commit()
+
+
+class ExplicarIn(BaseModel):
+    student_answer: str | None = None
+
+
+@router.post("/questoes/{qid}/explicar")
+def explicar(qid: int, dados: ExplicarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Tutor IA: explica a questão (diagnóstico, mini-aula, macete). Só pedagogia;
+    o gabarito/correção já vêm do backend."""
+    from app.modules.ai_registry.cliente import AiCallError
+    from app.modules.ai_registry.servico import SemConexaoIA
+    from app.modules.tutor.tutor import explicar_questao
+
+    q = db.get(Question, qid)
+    if not q:
+        raise HTTPException(status_code=404, detail="Questão não encontrada.")
+    try:
+        return explicar_questao(db, q, user.id, dados.student_answer)
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except (AiCallError, ValueError) as e:
+        raise HTTPException(status_code=502, detail=f"A IA falhou: {e}") from e

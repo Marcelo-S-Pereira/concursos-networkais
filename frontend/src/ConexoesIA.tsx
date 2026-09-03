@@ -173,7 +173,7 @@ function Formulario({
         nome: inicial?.nome ?? "",
         endpoint: inicial?.endpoint ?? "https://api.together.xyz/v1",
         api_key: "",
-        modelo: inicial?.modelo ?? "",
+        modelo: inicial?.modelo ?? (categoria === "texto" ? "meta-llama/Llama-3.3-70B-Instruct-Turbo" : ""),
         categoria,
         max_tokens: inicial?.max_tokens ?? 4000,
         temperatura: inicial?.temperatura ?? 0.7,

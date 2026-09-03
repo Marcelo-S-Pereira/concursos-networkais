@@ -195,9 +195,16 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
                                 </label>
                             </div>
                         ) : (
-                            <img className="figura" src={api.paginaImagemUrl(examId, q.pagina)} alt={`página ${q.pagina + 1}`} />
+                            <div>
+                                <button className="secundario" onClick={() => setRecortando((v) => !v)}>
+                                    {recortando ? "Fechar recorte" : "✂ Recortar print da questão (para exibir no simulado)"}
+                                </button>
+                                {recortando
+                                    ? <RecortadorPagina examId={examId} pagina={q.pagina} qid={q.id} aoConcluir={() => { setRecortando(false); setVersaoImg(Date.now()); setModoExib("imagem") }} />
+                                    : <img className="figura" src={`${api.paginaImagemUrl(examId, q.pagina)}?t=${versaoImg}`} alt={`página ${q.pagina + 1}`} />}
+                            </div>
                         )}
-                        <p className="dica">Selecione e copie o texto para corrigir o enunciado e as alternativas abaixo.</p>
+                        <p className="dica">No modo Texto, copie o texto para corrigir os campos. No modo Print, recorte a questão para o simulado.</p>
                     </div>
                 )}
             </div>
@@ -253,6 +260,11 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
             </div>
         </article>
     )
+}
+
+// Recorta a partir da imagem da PÁGINA e salva como figura/print da questão.
+function RecortadorPagina({ examId, pagina, qid, aoConcluir }: { examId: number; pagina: number; qid: number; aoConcluir: () => void }) {
+    return <Recortador qid={qid} srcUrl={api.paginaImagemUrl(examId, pagina)} aoConcluir={aoConcluir} />
 }
 
 // Ferramenta de recorte: arrasta um retângulo sobre a página; ao soltar, corta e envia.
