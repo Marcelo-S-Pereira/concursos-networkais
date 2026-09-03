@@ -215,3 +215,30 @@ def pagina_texto(exam_id: int, n: int, _: User = Depends(usuario_atual)):
     if not caminho.exists():
         raise HTTPException(status_code=404, detail="Texto da página não disponível.")
     return PlainTextResponse(caminho.read_text(encoding="utf-8"))
+
+
+class TranscricaoOut(BaseModel):
+    enunciado: str
+    alternativas: dict[str, str]
+
+
+@router.post("/questoes/{qid}/transcrever", response_model=TranscricaoOut)
+def transcrever_com_ia(qid: int, _: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Sugere a transcrição da questão usando a IA cadastrada (LLM no texto, VLM
+    na figura). NÃO salva — devolve para o usuário revisar e então salvar."""
+    from app.modules.ai_registry.cliente import AiCallError
+    from app.modules.ai_registry.servico import SemConexaoIA
+    from app.modules.ingestion.transcricao_ia import transcrever_questao
+
+    q = db.get(Question, qid)
+    if not q:
+        raise HTTPException(status_code=404, detail="Questão não encontrada.")
+    try:
+        dados = transcrever_questao(db, q)
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except AiCallError as e:
+        raise HTTPException(status_code=502, detail=f"A IA falhou: {e}") from e
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return TranscricaoOut(**dados)

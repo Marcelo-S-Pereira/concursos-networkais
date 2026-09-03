@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import RichText from "./RichText"
 import { api, type Exame, type Questao } from "./api"
 
 export default function Cadastro() {
@@ -53,6 +54,22 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
         if (abrir && !textoPag) setTextoPag(await api.paginaTexto(examId, q.pagina))
     }
     const [salvando, setSalvando] = useState(false)
+    const [transcrevendo, setTranscrevendo] = useState(false)
+    const [erroIA, setErroIA] = useState<string | null>(null)
+
+    async function corrigirComIA() {
+        setTranscrevendo(true)
+        setErroIA(null)
+        try {
+            const r = await api.transcreverIA(q.id)
+            setEnunciado(r.enunciado)
+            setAlts({ ...alts, ...r.alternativas })
+        } catch (e) {
+            setErroIA(e instanceof Error ? e.message : "Falha na IA")
+        } finally {
+            setTranscrevendo(false)
+        }
+    }
 
     async function salvar(extra?: { revisada?: boolean }) {
         setSalvando(true)
@@ -105,18 +122,22 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
             )}
 
             <label className="campo">Enunciado
-                <textarea value={enunciado} onChange={(e) => setEnunciado(e.target.value)} rows={3} />
+                <RichText valor={enunciado} aoMudar={setEnunciado} minRows={3} />
             </label>
             <div className="alternativas-edit">
                 {["A", "B", "C", "D", "E"].map((L) => (
-                    <label key={L} className="alt">
+                    <div key={L} className="alt-rich">
                         <span className="marca">{L}</span>
-                        <input value={alts[L] ?? ""} onChange={(e) => setAlts({ ...alts, [L]: e.target.value })} placeholder={`alternativa ${L}`} />
-                    </label>
+                        <RichText valor={alts[L] ?? ""} aoMudar={(html) => setAlts({ ...alts, [L]: html })} minRows={1} />
+                    </div>
                 ))}
             </div>
 
+            {erroIA && <p className="falha">{erroIA}</p>}
             <div className="acoes">
+                <button disabled={transcrevendo} className="ia" onClick={corrigirComIA} title="Transcreve esta questão com a IA cadastrada (revise antes de salvar)">
+                    {transcrevendo ? "IA transcrevendo…" : "✨ Corrigir com IA"}
+                </button>
                 <button disabled={salvando} onClick={() => salvar()}>Salvar</button>
                 <button disabled={salvando} onClick={() => salvar({ revisada: true })}>Salvar e conferida</button>
                 <button className="secundario" onClick={() => setVerGabarito((v) => !v)}>

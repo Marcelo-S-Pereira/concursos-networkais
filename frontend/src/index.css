@@ -222,3 +222,25 @@ button.perigo { background: transparent; color: var(--falha); border: 1px solid 
 
 .origem-conteudo-texto { margin-top: 8px; display: grid; gap: 8px; }
 .origem-conteudo-texto .dica { color: var(--suave); font-size: .8rem; margin: 0; }
+
+/* --- editor rico (tipo Word) --- */
+.rich { border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; background: var(--fundo); }
+.rich-barra { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px; background: var(--cartao); border-bottom: 1px solid var(--borda); }
+.rich-barra button {
+    min-height: 0; padding: 3px 9px; background: transparent; color: var(--texto);
+    border: 1px solid transparent; border-radius: 5px; font-size: .9rem; min-width: 30px;
+}
+.rich-barra button:hover { background: var(--borda); }
+.rich-barra select { min-height: 0; padding: 3px 6px; border: 1px solid var(--borda); border-radius: 5px; background: var(--fundo); color: var(--texto); font-size: .82rem; }
+.rich-area { padding: 8px 10px; outline: none; font: inherit; line-height: 1.5; }
+.rich-area:focus { background: var(--fundo); }
+.rich-area sup { font-size: .7em; }
+.rich-area sub { font-size: .7em; }
+
+.alt-rich { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+.alt-rich .marca { flex: 0 0 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--borda); border-radius: 8px; font-weight: 700; }
+.alt-rich .rich { flex: 1; }
+.enun sup, .alts-prova sup { font-size: .7em; }
+.enun sub, .alts-prova sub { font-size: .7em; }
+button.ia { background: #6d28d9; color: #fff; }
+button.ia:hover { background: #5b21b6; }

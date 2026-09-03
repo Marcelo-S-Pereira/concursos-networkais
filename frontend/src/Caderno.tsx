@@ -1,3 +1,4 @@
+import DOMPurify from "dompurify"
 import { useEffect, useRef, useState } from "react"
 import { api, type Exame, type Questao, type ResultadoSimulado } from "./api"
 
@@ -68,11 +69,11 @@ function Simulado({ exameId }: { exameId: number }) {
                 {qs.map((q) => (
                     <article key={q.id} className="q-prova">
                         <header><strong>{q.numero}</strong> <span className="disc">{q.disciplina}</span></header>
-                        <p className="enun">{q.enunciado.replace(/\n\[figura:.*\]/, "")}</p>
+                        <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
                         {q.tem_figura && <img className="figura" src={api.figuraUrl(q.id)} alt="figura" />}
                         <ol className="alts-prova">
                             {q.alternativas.map((a) => (
-                                <li key={a.letra}><b>{a.letra})</b> {a.texto}</li>
+                                <li key={a.letra}><b>{a.letra})</b> <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(a.texto) }} /></li>
                             ))}
                         </ol>
                         {resultado && (

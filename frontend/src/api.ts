@@ -84,6 +84,7 @@ export const api = {
         const res = await fetch(`/api/v1/exames/${examId}/pagina/${n}/texto`, { credentials: "include" })
         return res.ok ? res.text() : ""
     },
+    transcreverIA: (qid: number) => pedir<{ enunciado: string; alternativas: Record<string, string> }>(`/exames/questoes/${qid}/transcrever`, { method: "POST" }),
     restaurarFigura: (qid: number) => pedir<{ ok: boolean }>(`/exames/questoes/${qid}/figura/restaurar`, { method: "POST" }),
     corrigir: (examId: number, respostas: Record<number, string>) =>
         pedir<ResultadoSimulado>(`/exames/${examId}/corrigir`, { method: "POST", body: JSON.stringify({ respostas }) }),
