@@ -1,13 +1,13 @@
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import usuario_atual
+from app.api.deps import apenas_superadmin, usuario_atual
 from app.db.models import Choice, Exam, Question, User
 from app.db.session import get_db
 
@@ -250,3 +250,56 @@ def transcrever_com_ia(qid: int, _: User = Depends(usuario_atual), db: Session =
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return TranscricaoOut(**dados)
+
+
+@router.post("/importar", response_model=ExamOut, status_code=201)
+async def importar_caderno(
+    prova: UploadFile,
+    gabarito: UploadFile,
+    banca: str = Form(""),
+    orgao: str = Form(""),
+    cargo: str = Form(""),
+    ano: int | None = Form(None),
+    coluna_gabarito: int = Form(0),
+    _: User = Depends(apenas_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Importa um caderno novo: salva os PDFs (fora do git) e roda a ingestão."""
+
+    from app.modules.ingestion.servico import ingerir
+
+    if prova.content_type != "application/pdf" or gabarito.content_type != "application/pdf":
+        raise HTTPException(status_code=422, detail="Envie os dois arquivos em PDF.")
+
+    destino = FIGURAS_DIR.parent / "cadernos"
+    destino.mkdir(parents=True, exist_ok=True)
+    import uuid
+
+    pid = uuid.uuid4().hex
+    caminho_prova = destino / f"{pid}_prova.pdf"
+    caminho_gab = destino / f"{pid}_gabarito.pdf"
+    caminho_prova.write_bytes(await prova.read())
+    caminho_gab.write_bytes(await gabarito.read())
+
+    try:
+        exam = ingerir(
+            db, caminho_prova=str(caminho_prova), caminho_gabarito=str(caminho_gab),
+            banca=banca or "?", orgao=orgao or "?", cargo=cargo or "?", ano=ano,
+            coluna_gabarito=coluna_gabarito,
+        )
+    except Exception as e:  # noqa: BLE001 - devolve erro legível ao usuário
+        raise HTTPException(status_code=422, detail=f"Falha ao importar: {e}") from e
+
+    qs = [q for q in exam.questoes if not q.descartada]
+    return ExamOut(
+        id=exam.id, banca=exam.banca, orgao=exam.orgao, cargo=exam.cargo, ano=exam.ano,
+        total=len(qs), revisar=len([q for q in qs if q.confianca < 1.0 and not q.revisada]),
+    )
+
+
+@router.delete("/{exam_id}", status_code=204)
+def apagar_caderno(exam_id: int, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    exam = db.get(Exam, exam_id)
+    if exam:
+        db.delete(exam)
+        db.commit()

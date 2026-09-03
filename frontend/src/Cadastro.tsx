@@ -4,29 +4,105 @@ import { api, type Exame, type Questao } from "./api"
 
 export default function Cadastro() {
     const [exames, setExames] = useState<Exame[] | null>(null)
-    const [exameId, setExameId] = useState<number | null>(null)
+    const [abertos, setAbertos] = useState<Set<number>>(new Set())
+    const [adicionando, setAdicionando] = useState(false)
 
-    useEffect(() => {
-        api.exames().then((e) => { setExames(e); if (e.length) setExameId(e[0].id) }).catch(() => setExames([]))
-    }, [])
+    async function recarregar() { setExames(await api.exames()) }
+    useEffect(() => { recarregar().catch(() => setExames([])) }, [])
+
+    function alternar(id: number) {
+        setAbertos((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+    }
 
     if (!exames) return <p className="neutro">Carregando…</p>
-    if (!exames.length) return <p className="neutro">Nenhuma prova importada. (importação por PDF: próxima etapa)</p>
 
     return (
         <div>
-            <p className="explica">
-                Aqui você confere a transcrição das questões e recorta as figuras.
-                O <strong>gabarito fica escondido</strong> — ele já está na base e o backend corrige por ele.
-            </p>
-            <div className="seletor-exame">
-                {exames.map((e) => (
-                    <button key={e.id} className={e.id === exameId ? "ativa" : ""} onClick={() => setExameId(e.id)}>
-                        {e.orgao} · {e.cargo}
-                    </button>
-                ))}
+            <div className="topo-cadernos">
+                <p className="explica">Confira a transcrição e recorte figuras. O gabarito fica escondido (o backend corrige por ele).</p>
+                <button className="add" onClick={() => setAdicionando((v) => !v)}>{adicionando ? "Cancelar" : "+ Adicionar caderno"}</button>
             </div>
-            {exameId && <Lista exameId={exameId} />}
+
+            {adicionando && <FormCaderno aoConcluir={async () => { setAdicionando(false); await recarregar() }} />}
+
+            {!exames.length && !adicionando && <p className="neutro">Nenhum caderno ainda. Clique em “Adicionar caderno”.</p>}
+
+            {exames.map((ex) => (
+                <div key={ex.id} className={`caderno-linha ${abertos.has(ex.id) ? "aberto" : ""}`}>
+                    <div className="caderno-cab" onClick={() => alternar(ex.id)}>
+                        <span className="seta">{abertos.has(ex.id) ? "▾" : "▸"}</span>
+                        <strong>{ex.orgao} · {ex.cargo}</strong>
+                        <span className="caderno-meta">{ex.banca}{ex.ano ? ` · ${ex.ano}` : ""} · {ex.total} questões</span>
+                        {ex.revisar > 0 && <span className="badge">{ex.revisar} p/ revisar</span>}
+                        <button className="link apagar-caderno" onClick={async (e) => { e.stopPropagation(); if (confirm(`Apagar o caderno "${ex.cargo}" e todas as questões?`)) { await api.apagarCaderno(ex.id); await recarregar() } }}>apagar</button>
+                    </div>
+                    {abertos.has(ex.id) && <Lista exameId={ex.id} />}
+                </div>
+            ))}
+        </div>
+    )
+}
+
+function Dropzone({ rotulo, arquivo, aoSelecionar }: { rotulo: string; arquivo: File | null; aoSelecionar: (f: File | null) => void }) {
+    const [sobre, setSobre] = useState(false)
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    function pegarPdf(files: FileList | null) {
+        const f = files?.[0]
+        if (f && f.type === "application/pdf") aoSelecionar(f)
+    }
+
+    return (
+        <div
+            className={`dropzone ${sobre ? "sobre" : ""} ${arquivo ? "ok" : ""}`}
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setSobre(true) }}
+            onDragLeave={() => setSobre(false)}
+            onDrop={(e) => { e.preventDefault(); setSobre(false); pegarPdf(e.dataTransfer.files) }}
+        >
+            <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={(e) => pegarPdf(e.target.files)} />
+            <strong>{rotulo}</strong>
+            <span>{arquivo ? `✓ ${arquivo.name}` : "arraste o PDF aqui ou clique para selecionar"}</span>
+        </div>
+    )
+}
+
+function FormCaderno({ aoConcluir }: { aoConcluir: () => void }) {
+    const [prova, setProva] = useState<File | null>(null)
+    const [gabarito, setGabarito] = useState<File | null>(null)
+    const [meta, setMeta] = useState({ banca: "", orgao: "", cargo: "", ano: "", coluna_gabarito: "0" })
+    const [enviando, setEnviando] = useState(false)
+    const [erro, setErro] = useState<string | null>(null)
+
+    async function enviar() {
+        if (!prova || !gabarito) { setErro("Selecione o PDF da prova e o do gabarito."); return }
+        setEnviando(true); setErro(null)
+        try {
+            const fd = new FormData()
+            fd.append("prova", prova); fd.append("gabarito", gabarito)
+            fd.append("banca", meta.banca); fd.append("orgao", meta.orgao); fd.append("cargo", meta.cargo)
+            if (meta.ano) fd.append("ano", meta.ano)
+            fd.append("coluna_gabarito", meta.coluna_gabarito)
+            await api.importarCaderno(fd)
+            aoConcluir()
+        } catch (e) { setErro(e instanceof Error ? e.message : "Falha ao importar") }
+        finally { setEnviando(false) }
+    }
+
+    return (
+        <div className="cartao form-caderno">
+            <h3>Novo caderno</h3>
+            <div className="grade-estat">
+                <Dropzone rotulo="PDF da prova (caderno)" arquivo={prova} aoSelecionar={setProva} />
+                <Dropzone rotulo="PDF do gabarito" arquivo={gabarito} aoSelecionar={setGabarito} />
+                <label>Banca<input value={meta.banca} onChange={(e) => setMeta({ ...meta, banca: e.target.value })} placeholder="Cesgranrio" /></label>
+                <label>Órgão<input value={meta.orgao} onChange={(e) => setMeta({ ...meta, orgao: e.target.value })} placeholder="Transpetro" /></label>
+                <label>Cargo/ênfase<input value={meta.cargo} onChange={(e) => setMeta({ ...meta, cargo: e.target.value })} placeholder="Dutos e Terminais" /></label>
+                <label>Ano<input value={meta.ano} onChange={(e) => setMeta({ ...meta, ano: e.target.value })} placeholder="2023" /></label>
+                <label>Coluna do gabarito<input value={meta.coluna_gabarito} onChange={(e) => setMeta({ ...meta, coluna_gabarito: e.target.value })} placeholder="0 = 1ª prova" /></label>
+            </div>
+            {erro && <p className="falha">{erro}</p>}
+            <button disabled={enviando} onClick={enviar}>{enviando ? "Importando…" : "Importar caderno"}</button>
         </div>
     )
 }
@@ -46,6 +122,7 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
     const [recortando, setRecortando] = useState(false)
     const [versaoImg, setVersaoImg] = useState(Date.now())
     const [verPagina, setVerPagina] = useState(false)
+    const [verImg, setVerImg] = useState(false)
     const [textoPag, setTextoPag] = useState<string>("")
 
     async function alternarPagina() {
@@ -95,8 +172,12 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
                 </button>
                 {verPagina && (
                     <div className="origem-conteudo-texto">
-                        <p className="dica">Texto real do PDF, em colunas — selecione e copie para corrigir os campos. Não é imagem.</p>
+                        <p className="dica">Texto real do PDF, em colunas — selecione e copie para corrigir os campos.</p>
                         <textarea className="texto-origem" value={textoPag} readOnly rows={16} onFocus={(e) => e.target.select()} />
+                        <button className="link" onClick={() => setVerImg((v) => !v)}>
+                            {verImg ? "▾ ocultar imagem do PDF" : "▸ ver imagem do PDF (a página como aparece na prova)"}
+                        </button>
+                        {verImg && <img className="figura" src={api.paginaImagemUrl(examId, q.pagina)} alt={`página ${q.pagina + 1}`} />}
                     </div>
                 )}
             </div>

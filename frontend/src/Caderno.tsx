@@ -9,7 +9,7 @@ const MASTERY_ROTULO: Record<string, string> = {
 }
 function rotuloMastery(m: string) { return MASTERY_ROTULO[m] ?? m.toLowerCase() }
 
-export default function Caderno() {
+export default function Caderno({ modo }: { modo: "celular" | "computador" }) {
     const [exames, setExames] = useState<Exame[] | null>(null)
     const [exameId, setExameId] = useState<number | null>(null)
 
@@ -28,12 +28,12 @@ export default function Caderno() {
                     </button>
                 ))}
             </div>
-            {exameId && <Simulado key={exameId} exameId={exameId} />}
+            {exameId && <Simulado key={exameId} exameId={exameId} modo={modo} />}
         </div>
     )
 }
 
-function Simulado({ exameId }: { exameId: number }) {
+function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "computador" }) {
     const [qs, setQs] = useState<Questao[] | null>(null)
     const [marcadas, setMarcadas] = useState<Record<number, Set<string>>>({})
     const [foraDoCampo, setForaDoCampo] = useState<Record<number, boolean>>({})
@@ -115,6 +115,11 @@ function Simulado({ exameId }: { exameId: number }) {
                                 <li key={a.letra}><b>{a.letra})</b> <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(a.texto) }} /></li>
                             ))}
                         </ol>
+                        {modo === "celular" && !resultado && (
+                            <SeletorGrande cor={corCaneta}
+                                marcada={[...(marcadas[q.id] ?? [])][0]}
+                                aoMarcar={(L) => setMarcadas((m) => ({ ...m, [q.id]: new Set([L]) }))} />
+                        )}
                         <Rascunho cor={corCaneta} />
                         {resultado && (
                             <p className={resultado.resultado[q.id] ? "acertou" : "errou"}>
@@ -291,5 +296,24 @@ function Bolha({ tamanho, cor, marcada, bloqueado, aoMarcar }: {
             onPointerDown={(e) => { desenhando.current = true; (e.target as HTMLElement).setPointerCapture(e.pointerId); pintar(e) }}
             onPointerMove={(e) => desenhando.current && pintar(e)}
             onPointerUp={() => (desenhando.current = false)} />
+    )
+}
+
+
+// Celular: alternativas grandes na frente da questão, para preencher com o dedo.
+function SeletorGrande({ cor, marcada, aoMarcar }: { cor: string; marcada: string | undefined; aoMarcar: (letra: string) => void }) {
+    return (
+        <div className="seletor-grande">
+            {["A", "B", "C", "D", "E"].map((L) => (
+                <button
+                    key={L}
+                    className={`bolha-grande ${marcada === L ? "cheia" : ""}`}
+                    style={marcada === L ? { background: cor, borderColor: cor } : undefined}
+                    onClick={() => aoMarcar(L)}
+                >
+                    {L}
+                </button>
+            ))}
+        </div>
     )
 }

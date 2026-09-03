@@ -309,3 +309,37 @@ button.ia:hover { background: #5b21b6; }
 /* comparação no desempenho */
 .linha-enfase { grid-template-columns: 1fr auto 70px auto auto 1fr; }
 .delta { font-size: .72rem; color: var(--suave); }
+
+/* celular: sem grade lateral, alternativas grandes na frente da questão */
+.modo-celular .folha, .modo-celular .cfg-cartao { display: none; }
+.seletor-grande { display: flex; gap: 10px; margin: 10px 0; }
+.bolha-grande {
+    width: 52px; height: 52px; border-radius: 50%; border: 2px solid var(--suave);
+    background: var(--fundo); color: var(--texto); font-weight: 700; font-size: 1.1rem; min-height: 0;
+}
+.bolha-grande.cheia { color: #fff; }
+
+/* --- cadernos expansíveis --- */
+.topo-cadernos { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.topo-cadernos .explica { margin: 0; flex: 1; }
+.topo-cadernos .add { flex: 0 0 auto; }
+.caderno-linha { border: 1px solid var(--borda); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+.caderno-linha.aberto { border-color: var(--texto); }
+.caderno-cab { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; background: var(--cartao); }
+.caderno-cab .seta { color: var(--suave); }
+.caderno-meta { color: var(--suave); font-size: .82rem; }
+.apagar-caderno { margin-left: auto; }
+.form-caderno h3 { margin: 0 0 10px; font-size: .95rem; }
+.form-caderno input[type=file] { font-size: .8rem; }
+
+/* --- dropzone de importação --- */
+.dropzone {
+    grid-column: 1 / -1;
+    display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center;
+    padding: 20px; border: 2px dashed var(--borda); border-radius: 10px; cursor: pointer;
+    text-align: center; color: var(--suave); background: var(--fundo);
+}
+.dropzone strong { color: var(--texto); font-size: .9rem; }
+.dropzone span { font-size: .8rem; }
+.dropzone.sobre { border-color: var(--ok); background: rgba(53,210,155,.08); }
+.dropzone.ok { border-color: var(--ok); border-style: solid; }

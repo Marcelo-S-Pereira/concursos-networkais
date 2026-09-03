@@ -60,7 +60,7 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
                 {admin && <button className={aba === "estat" ? "ativa" : ""} onClick={() => setAba("estat")}>Estatísticas</button>}
             </nav>
 
-            {aba === "caderno" && <Caderno />}
+            {aba === "caderno" && <Caderno modo={modo} />}
             {aba === "cadastro" && admin && <Cadastro />}
             {aba === "ia" && admin && <ConexoesIA />}
             {aba === "estat" && admin && <Estatisticas />}

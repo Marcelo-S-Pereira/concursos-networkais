@@ -73,6 +73,12 @@ export type PatchQuestao = Partial<{
 
 export const api = {
     exames: () => pedir<Exame[]>("/exames"),
+    importarCaderno: async (form: FormData) => {
+        const res = await fetch(`/api/v1/exames/importar`, { method: "POST", credentials: "include", body: form })
+        if (!res.ok) { const c = await res.json().catch(() => null); throw new Error(c?.detail ?? "Falha ao importar") }
+        return res.json() as Promise<Exame>
+    },
+    apagarCaderno: (examId: number) => pedir<void>(`/exames/${examId}`, { method: "DELETE" }),
     questoes: (examId: number) => pedir<Questao[]>(`/exames/${examId}/questoes`),
     editarQuestao: (qid: number, dados: PatchQuestao) =>
         pedir<Questao>(`/exames/questoes/${qid}`, { method: "PATCH", body: JSON.stringify(dados) }),
