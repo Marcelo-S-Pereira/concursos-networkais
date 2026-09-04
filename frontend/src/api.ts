@@ -49,7 +49,7 @@ export type DadosCadastro = { nome: string; email: string; cpf: string; telefone
 export type Choice = { letra: string; texto: string }
 export type Questao = {
     id: number; numero: number; pagina: number; disciplina: string; enunciado: string
-    gabarito: string | null; tem_figura: boolean; modo_exibicao: string; confianca: number; aviso: string
+    enunciado_col2: string; gabarito: string | null; tem_figura: boolean; modo_exibicao: string; confianca: number; aviso: string
     revisada: boolean; descartada: boolean; alternativas: Choice[]
 }
 export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
@@ -81,7 +81,7 @@ export type ConexaoInput = {
 }
 export type PatchQuestao = Partial<{
     enunciado: string; gabarito: string; disciplina: string
-    alternativas: Record<string, string>; revisada: boolean; descartada: boolean; modo_exibicao: string
+    alternativas: Record<string, string>; revisada: boolean; descartada: boolean; modo_exibicao: string; enunciado_col2: string
 }>
 
 export const api = {

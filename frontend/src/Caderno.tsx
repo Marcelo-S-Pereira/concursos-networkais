@@ -118,7 +118,14 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                             <img className="figura questao-img" src={api.figuraUrl(q.id)} alt={`questão ${q.numero}`} />
                         ) : (
                             <>
-                                <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                                {q.enunciado_col2 && q.enunciado_col2.trim() ? (
+                                    <div className="enun-2col">
+                                        <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                                        <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado_col2) }} />
+                                    </div>
+                                ) : (
+                                    <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                                )}
                                 {q.tem_figura && <img className="figura" src={api.figuraUrl(q.id)} alt="figura" />}
                                 <ol className="alts-prova">
                                     {q.alternativas.map((a) => (

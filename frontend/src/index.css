@@ -369,3 +369,11 @@ button.ia:hover { background: #5b21b6; }
 .tag-erro { font-size: .68rem; background: var(--suave); color: #fff; padding: 1px 7px; border-radius: 20px; }
 .macete { border-left: 3px solid #6d28d9; padding-left: 10px; }
 .macete ol { margin: 6px 0; padding-left: 20px; }
+
+/* --- enunciado em duas colunas --- */
+.enunciado-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 6px; }
+@media (max-width: 640px) { .enunciado-2col { grid-template-columns: 1fr; } }
+.enunciado-2col .col { display: grid; gap: 4px; }
+.col-rot { font-size: .72rem; color: var(--suave); }
+.enun-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.modo-celular .enun-2col { grid-template-columns: 1fr; }

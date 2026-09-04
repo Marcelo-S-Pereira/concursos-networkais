@@ -26,6 +26,7 @@ class QuestaoOut(BaseModel):
     pagina: int
     disciplina: str
     enunciado: str
+    enunciado_col2: str
     gabarito: str | None
     tem_figura: bool
     modo_exibicao: str
@@ -48,6 +49,7 @@ class ExamOut(BaseModel):
 
 class QuestaoPatch(BaseModel):
     enunciado: str | None = None
+    enunciado_col2: str | None = None
     gabarito: str | None = None
     disciplina: str | None = None
     alternativas: dict[str, str] | None = None  # {"A": "texto", ...}
@@ -58,7 +60,8 @@ class QuestaoPatch(BaseModel):
 
 def _para_saida(q: Question) -> QuestaoOut:
     return QuestaoOut(
-        id=q.id, numero=q.numero, pagina=q.pagina, disciplina=q.disciplina, enunciado=q.enunciado,
+        id=q.id, numero=q.numero, pagina=q.pagina, disciplina=q.disciplina,
+        enunciado=q.enunciado, enunciado_col2=q.enunciado_col2,
         gabarito=q.gabarito, tem_figura=q.tem_figura, modo_exibicao=q.modo_exibicao,
         confianca=q.confianca, aviso=q.aviso,
         revisada=q.revisada, descartada=q.descartada,
@@ -92,6 +95,8 @@ def editar_questao(qid: int, dados: QuestaoPatch, _: User = Depends(apenas_super
         raise HTTPException(status_code=404, detail="Questão não encontrada.")
     if dados.enunciado is not None:
         q.enunciado = dados.enunciado
+    if dados.enunciado_col2 is not None:
+        q.enunciado_col2 = dados.enunciado_col2
     if dados.disciplina is not None:
         q.disciplina = dados.disciplina
     if dados.gabarito is not None:

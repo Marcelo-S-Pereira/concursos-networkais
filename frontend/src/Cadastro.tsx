@@ -117,6 +117,7 @@ function Lista({ exameId }: { exameId: number }) {
 
 function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; aoMudar: (q: Questao) => void }) {
     const [enunciado, setEnunciado] = useState(q.enunciado)
+    const [enunciadoCol2, setEnunciadoCol2] = useState(q.enunciado_col2)
     const [alts, setAlts] = useState<Record<string, string>>(Object.fromEntries(q.alternativas.map((a) => [a.letra, a.texto])))
     const [verGabarito, setVerGabarito] = useState(false)
     const [recortando, setRecortando] = useState(false)
@@ -159,7 +160,7 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
 
     async function salvar(extra?: { revisada?: boolean }) {
         setSalvando(true)
-        try { aoMudar(await api.editarQuestao(q.id, { enunciado, alternativas: alts, modo_exibicao: modoExib, ...extra })) }
+        try { aoMudar(await api.editarQuestao(q.id, { enunciado, enunciado_col2: enunciadoCol2, alternativas: alts, modo_exibicao: modoExib, ...extra })) }
         finally { setSalvando(false) }
     }
 
@@ -182,17 +183,13 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
                 {verPagina && (
                     <div className="origem-conteudo-texto">
                         <div className="toggle-origem">
-                            <button className={origemVista === "texto" ? "on" : ""} onClick={() => setOrigemVista("texto")}>Texto (2 colunas)</button>
+                            <button className={origemVista === "texto" ? "on" : ""} onClick={() => setOrigemVista("texto")}>Texto p/ copiar (2 colunas)</button>
                             <button className={origemVista === "imagem" ? "on" : ""} onClick={() => setOrigemVista("imagem")}>Print do PDF</button>
                         </div>
                         {origemVista === "texto" ? (
                             <div className="duas-colunas">
-                                <label className="campo">Coluna esquerda
-                                    <RichText valor={colEsq} aoMudar={() => {}} minRows={10} />
-                                </label>
-                                <label className="campo">Coluna direita
-                                    <RichText valor={colDir} aoMudar={() => {}} minRows={10} />
-                                </label>
+                                <textarea className="texto-origem" value={colEsq} readOnly rows={12} onFocus={(e) => e.target.select()} />
+                                <textarea className="texto-origem" value={colDir} readOnly rows={12} onFocus={(e) => e.target.select()} />
                             </div>
                         ) : (
                             <div>
@@ -204,7 +201,7 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
                                     : <img className="figura" src={`${api.paginaImagemUrl(examId, q.pagina)}?t=${versaoImg}`} alt={`página ${q.pagina + 1}`} />}
                             </div>
                         )}
-                        <p className="dica">No modo Texto, copie o texto para corrigir os campos. No modo Print, recorte a questão para o simulado.</p>
+                        <p className="dica">Referência do PDF: copie o texto para o enunciado (2 colunas) e as alternativas. No modo Print, recorte a questão para o simulado.</p>
                     </div>
                 )}
             </div>
@@ -229,9 +226,18 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
                 </div>
             )}
 
-            <label className="campo">Enunciado
-                <RichText valor={enunciado} aoMudar={setEnunciado} minRows={3} />
-            </label>
+            <div className="campo">Enunciado (duas colunas, como na prova)
+                <div className="enunciado-2col">
+                    <div className="col">
+                        <span className="col-rot">Coluna esquerda</span>
+                        <RichText valor={enunciado} aoMudar={setEnunciado} minRows={4} />
+                    </div>
+                    <div className="col">
+                        <span className="col-rot">Coluna direita</span>
+                        <RichText valor={enunciadoCol2} aoMudar={setEnunciadoCol2} minRows={4} />
+                    </div>
+                </div>
+            </div>
             <div className="alternativas-edit">
                 {["A", "B", "C", "D", "E"].map((L) => (
                     <div key={L} className="alt-rich">
