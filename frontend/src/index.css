@@ -172,6 +172,18 @@ textarea { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--bo
 .form-ia label { display: grid; gap: 4px; font-size: .82rem; color: var(--suave); }
 .form-ia .dupla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-ia .mant { font-size: .72rem; }
+
+/* Campo de chave com o olho por dentro, sem empurrar o layout. */
+.campo-chave { position: relative; display: block; }
+.campo-chave input { width: 100%; padding-right: 40px; }
+.campo-chave .olho {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    width: 32px; height: 28px; padding: 0; line-height: 1;
+    background: none; border: 0; cursor: pointer; font-size: 1rem;
+    color: var(--suave); opacity: .75;
+}
+.campo-chave .olho:hover { opacity: 1; }
+.campo-chave .olho:disabled { cursor: default; opacity: .4; }
 .linha-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
 .fb-input { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--suave); }
 .fb-input input { width: 64px; }

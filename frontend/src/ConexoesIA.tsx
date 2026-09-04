@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { api, type ConexaoIA, type ConexaoInput } from "./api"
+import CampoSecreto from "./CampoSecreto"
 
 // As 5 categorias que o usuário pediu, separadas: LLM, VLM, STT, TTS + Embeddings (RAG).
 const CATEGORIAS: { chave: string; rotulo: string; dica: string }[] = [
@@ -204,7 +205,12 @@ function Formulario({
             <label>Modelo<input value={f.modelo} onChange={(e) => up("modelo", e.target.value)} placeholder="meta-llama/Llama-3.3-70B-Instruct-Turbo" /></label>
             <label>
                 API key {inicial && <span className="mant">(em branco = mantém a atual)</span>}
-                <input type="password" value={f.api_key} onChange={(e) => up("api_key", e.target.value)} placeholder={inicial ? "•••• mantida" : "cole a chave"} autoComplete="off" />
+                <CampoSecreto
+                    valor={f.api_key}
+                    aoMudar={(v) => up("api_key", v)}
+                    placeholder={inicial ? "•••• mantida" : "cole a chave"}
+                    aoRevelar={inicial ? async () => (await api.revelarChave(inicial.id)).api_key : undefined}
+                />
             </label>
             <div className="dupla">
                 <label>Max tokens<input type="number" value={f.max_tokens} onChange={(e) => up("max_tokens", Number(e.target.value))} /></label>
