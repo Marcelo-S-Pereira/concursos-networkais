@@ -18,6 +18,9 @@ class RegrasIn(BaseModel):
     minimos: dict[str, int] = {}
     nota_corte: float | None = None
     vagas: int | None = None
+    fases: dict[str, str] = {}
+    minimo_pct_fase: dict[str, float] = {}
+    materias_sem_zero: list[str] = []
 
 
 class RegrasOut(RegrasIn):
@@ -29,7 +32,9 @@ def obter_regras(exam_id: int, _: User = Depends(apenas_superadmin), db: Session
     r = db.execute(select(ExamRules).where(ExamRules.exam_id == exam_id)).scalar_one_or_none()
     if not r:
         return None
-    return RegrasOut(exam_id=exam_id, pesos=r.pesos, minimos=r.minimos, nota_corte=r.nota_corte, vagas=r.vagas)
+    return RegrasOut(exam_id=exam_id, pesos=r.pesos, minimos=r.minimos, nota_corte=r.nota_corte,
+                     vagas=r.vagas, fases=r.fases, minimo_pct_fase=r.minimo_pct_fase,
+                     materias_sem_zero=r.materias_sem_zero)
 
 
 @router.put("/{exam_id}/regras", response_model=RegrasOut)
@@ -44,5 +49,10 @@ def gravar_regras(exam_id: int, dados: RegrasIn, _: User = Depends(apenas_supera
     r.minimos = dados.minimos
     r.nota_corte = dados.nota_corte
     r.vagas = dados.vagas
+    r.fases = dados.fases
+    r.minimo_pct_fase = dados.minimo_pct_fase
+    r.materias_sem_zero = dados.materias_sem_zero
     db.commit()
-    return RegrasOut(exam_id=exam_id, pesos=r.pesos, minimos=r.minimos, nota_corte=r.nota_corte, vagas=r.vagas)
+    return RegrasOut(exam_id=exam_id, pesos=r.pesos, minimos=r.minimos, nota_corte=r.nota_corte,
+                     vagas=r.vagas, fases=r.fases, minimo_pct_fase=r.minimo_pct_fase,
+                     materias_sem_zero=r.materias_sem_zero)

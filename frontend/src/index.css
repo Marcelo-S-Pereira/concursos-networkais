@@ -446,3 +446,6 @@ button.ia:hover { background: #5b21b6; }
 .gemeas { margin-top: 8px; display: grid; gap: 10px; }
 .gemea { border: 1px solid var(--borda); border-left: 3px solid #6d28d9; border-radius: 8px; padding: 10px; }
 .gemea .enun { margin: 4px 0 8px; }
+.fases-res { margin: 6px 0 0; padding-left: 18px; font-size: .82rem; }
+.fases-res li.abaixo { color: var(--falha); }
+.fases-res li.ok { color: var(--ok); }

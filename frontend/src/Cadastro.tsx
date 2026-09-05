@@ -128,11 +128,13 @@ function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: st
     const [corte, setCorte] = useState("")
     const [vagas, setVagas] = useState("")
     const [salvo, setSalvo] = useState(false)
+    const [carregada, setCarregada] = useState<import("./api").RegrasEditalT | null>(null)
 
     async function abrir() {
         const a = !aberto; setAberto(a)
         if (a) {
             const r = await api.obterRegras(examId)
+            setCarregada(r)
             if (r) {
                 setPesos(Object.fromEntries(Object.entries(r.pesos).map(([k, v]) => [k, String(v)])))
                 setMinimos(Object.fromEntries(Object.entries(r.minimos).map(([k, v]) => [k, String(v)])))
@@ -144,7 +146,10 @@ function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: st
     async function salvar() {
         const pnum: Record<string, number> = {}; for (const d of disciplinas) if (pesos[d]) pnum[d] = Number(pesos[d])
         const mnum: Record<string, number> = {}; for (const d of disciplinas) if (minimos[d]) mnum[d] = Number(minimos[d])
-        await api.gravarRegras(examId, { pesos: pnum, minimos: mnum, nota_corte: corte ? Number(corte) : null, vagas: vagas ? Number(vagas) : null })
+        await api.gravarRegras(examId, {
+            pesos: pnum, minimos: mnum, nota_corte: corte ? Number(corte) : null, vagas: vagas ? Number(vagas) : null,
+            fases: carregada?.fases ?? {}, minimo_pct_fase: carregada?.minimo_pct_fase ?? {}, materias_sem_zero: carregada?.materias_sem_zero ?? [],
+        })
         setSalvo(true); setTimeout(() => setSalvo(false), 1500)
     }
 
@@ -170,7 +175,14 @@ function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: st
                         <label>Vagas<input type="number" value={vagas} onChange={(e) => setVagas(e.target.value)} placeholder="opcional" /></label>
                         <button onClick={salvar}>{salvo ? "✓ salvo" : "Salvar regras"}</button>
                     </div>
-                    <p className="dica">Abaixo do mínimo em qualquer bloco, ou nota abaixo do corte = eliminado no fim do simulado.</p>
+                    {carregada?.minimo_pct_fase && Object.keys(carregada.minimo_pct_fase).length > 0 && (
+                        <div className="dica">
+                            <b>Regra por fase (do edital):</b>
+                            <ul>{Object.entries(carregada.minimo_pct_fase).map(([f, p]) => <li key={f}>{f}: mínimo {p}%</li>)}</ul>
+                            {carregada.materias_sem_zero && carregada.materias_sem_zero.length > 0 && <div>Não pode zerar: {carregada.materias_sem_zero.join(", ")}</div>}
+                        </div>
+                    )}
+                    <p className="dica">Abaixo do mínimo por fase, zerar matéria proibida, ou nota abaixo do corte = eliminado.</p>
                 </div>
             )}
         </div>

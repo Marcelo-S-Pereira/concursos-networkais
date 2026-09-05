@@ -238,9 +238,18 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                                 <h4>Classificação (edital)</h4>
                                 <p className="veredito">
                                     {resultado.classificacao.eliminado ? "✕ ELIMINADO" : "✓ CLASSIFICADO"}
-                                    {" · nota ponderada "}<strong>{resultado.classificacao.nota_ponderada}</strong>
+                                    {" · nota "}<strong>{resultado.classificacao.nota_ponderada}</strong>
                                     {resultado.classificacao.nota_corte != null && ` / corte ${resultado.classificacao.nota_corte}`}
                                 </p>
+                                {resultado.classificacao.por_fase?.length > 0 && (
+                                    <ul className="fases-res">
+                                        {resultado.classificacao.por_fase.map((f) => (
+                                            <li key={f.fase} className={f.minimo_pct != null && f.percentual < f.minimo_pct ? "abaixo" : "ok"}>
+                                                {f.fase}: {f.percentual}%{f.minimo_pct != null && ` (mín. ${f.minimo_pct}%)`}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
                                 {resultado.classificacao.motivos.length > 0 && (
                                     <ul className="motivos">{resultado.classificacao.motivos.map((m, i) => <li key={i}>{m}</li>)}</ul>
                                 )}

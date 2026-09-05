@@ -28,6 +28,12 @@ class ExamRules(Base):
     nota_corte: Mapped[float | None] = mapped_column(Float, nullable=True)
     vagas: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Regra por FASE (edital Cesgranrio): agrupa disciplinas em fases e cobra um
+    # mínimo percentual por fase, mais matérias que não podem zerar.
+    fases: Mapped[dict] = mapped_column(JSONB, default=dict)  # {disciplina: fase}
+    minimo_pct_fase: Mapped[dict] = mapped_column(JSONB, default=dict)  # {fase: pct}
+    materias_sem_zero: Mapped[list] = mapped_column(JSONB, default=list)  # [disciplina, ...]
+
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),

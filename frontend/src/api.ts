@@ -57,9 +57,10 @@ export type ResultadoSimulado = { total: number; respondidas: number; acertos: n
 export type Classificacao = {
     nota_ponderada: number; nota_corte: number | null; vagas: number | null
     eliminado: boolean; motivos: string[]
-    por_disciplina: Record<string, { acertos: number; total: number; peso: number; minimo: number | null }>
+    por_disciplina: Record<string, { acertos: number; total: number; peso: number }>
+    por_fase: { fase: string; pontos: number; total: number; percentual: number; minimo_pct: number | null }[]
 }
-export type RegrasEditalT = { pesos: Record<string, number>; minimos: Record<string, number>; nota_corte: number | null; vagas: number | null }
+export type RegrasEditalT = { pesos: Record<string, number>; minimos: Record<string, number>; nota_corte: number | null; vagas: number | null; fases?: Record<string, string>; minimo_pct_fase?: Record<string, number>; materias_sem_zero?: string[] }
 export type SimRun = { simulation_id: number; started_at: string; deadline_at: string; duration_seconds: number; question_count: number; status: string }
 export type EnfaseDesempenho = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number; historico_pct?: number | null; delta?: number | null; delta_rotulo?: string; amostra_historico?: number | null }
 export type StatEnfase = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; enfase: string; amostra: number | null; acerto_pct: number | null; fonte: string; tipo_fonte: string; status: string }
