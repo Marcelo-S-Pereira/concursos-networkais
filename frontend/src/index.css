@@ -441,3 +441,8 @@ button.ia:hover { background: #5b21b6; }
 .classificacao h4 { margin: 0 0 6px; font-size: .82rem; color: var(--suave); }
 .classificacao .veredito { margin: 0 0 6px; font-weight: 600; }
 .motivos { margin: 0; padding-left: 18px; font-size: .82rem; color: var(--falha); }
+
+/* --- questões gêmeas --- */
+.gemeas { margin-top: 8px; display: grid; gap: 10px; }
+.gemea { border: 1px solid var(--borda); border-left: 3px solid #6d28d9; border-radius: 8px; padding: 10px; }
+.gemea .enun { margin: 4px 0 8px; }

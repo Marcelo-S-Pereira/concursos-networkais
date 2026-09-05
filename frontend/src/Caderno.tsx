@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify"
 import { useEffect, useRef, useState } from "react"
-import { api, type Exame, type Explicacao, type Questao, type ResultadoSimulado, type SimResultado, type SimRun } from "./api"
+import { api, type Exame, type Explicacao, type GemeaT, type Questao, type ResultadoSimulado, type SimResultado, type SimRun } from "./api"
 
 const LETRAS = ["A", "B", "C", "D", "E"]
 const MASTERY_ROTULO: Record<string, string> = {
@@ -147,6 +147,7 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                                     {" · "}<button className="link" onClick={() => alert(`Gabarito da questão ${q.numero}: ${q.gabarito}`)}>ver gabarito</button>
                                 </p>
                                 <Explicar qid={q.id} respostaAluno={[...(marcadas[q.id] ?? [])][0] ?? null} />
+                                <Gemeas qid={q.id} />
                             </div>
                         )}
                     </article>
@@ -391,6 +392,58 @@ function Explicar({ qid, respostaAluno }: { qid: number; respostaAluno: string |
         <div>
             <button className="ia" disabled={carregando} onClick={pedir}>{carregando ? "IA explicando…" : "✨ Explicar com IA"}</button>
             {erro && <span className="falha"> {erro}</span>}
+        </div>
+    )
+}
+
+
+// Questões gêmeas: a IA gera 2 questões do mesmo conceito para praticar.
+function Gemeas({ qid }: { qid: number }) {
+    const [gemeas, setGemeas] = useState<GemeaT[] | null>(null)
+    const [carregando, setCarregando] = useState(false)
+    const [erro, setErro] = useState<string | null>(null)
+    const [respostas, setRespostas] = useState<Record<number, { escolha: string; acertou: boolean; gabarito: string }>>({})
+
+    async function gerar() {
+        setCarregando(true); setErro(null)
+        try { setGemeas(await api.gerarGemeas(qid)) }
+        catch (e) { setErro(e instanceof Error ? e.message : "Falha na IA") }
+        finally { setCarregando(false) }
+    }
+    async function responder(tw: GemeaT, letra: string) {
+        const r = await api.responderGemea(tw.id, letra)
+        setRespostas((m) => ({ ...m, [tw.id]: { escolha: letra, acertou: r.acertou, gabarito: r.gabarito } }))
+    }
+
+    if (!gemeas) {
+        return (
+            <div style={{ marginTop: 6 }}>
+                <button className="ia" disabled={carregando} onClick={gerar}>{carregando ? "IA gerando…" : "👯 Questões gêmeas"}</button>
+                {erro && <span className="falha"> {erro}</span>}
+            </div>
+        )
+    }
+    return (
+        <div className="gemeas">
+            {gemeas.map((tw, i) => {
+                const r = respostas[tw.id]
+                return (
+                    <div key={tw.id} className="gemea">
+                        <p><b>Gêmea {i + 1}</b></p>
+                        <p className="enun">{tw.enunciado}</p>
+                        <ol className="alts-prova">
+                            {Object.entries(tw.alternativas).map(([L, t]) => <li key={L}><b>{L})</b> {t}</li>)}
+                        </ol>
+                        {!r ? (
+                            <div className="seletor-grande">
+                                {["A", "B", "C", "D", "E"].map((L) => <button key={L} className="bolha-grande" onClick={() => responder(tw, L)}>{L}</button>)}
+                            </div>
+                        ) : (
+                            <p className={r.acertou ? "acertou" : "errou"}>{r.acertou ? "✓ acertou" : `✕ errou — gabarito ${r.gabarito}`}</p>
+                        )}
+                    </div>
+                )
+            })}
         </div>
     )
 }

@@ -342,3 +342,46 @@ def explicar(qid: int, dados: ExplicarIn, user: User = Depends(usuario_atual), d
         raise HTTPException(status_code=400, detail=str(e)) from e
     except (AiCallError, ValueError) as e:
         raise HTTPException(status_code=502, detail=f"A IA falhou: {e}") from e
+
+
+class GemeaOut(BaseModel):
+    id: int
+    enunciado: str
+    alternativas: dict[str, str]
+
+
+@router.post("/questoes/{qid}/gemeas", response_model=list[GemeaOut])
+def gerar_gemeas_rota(qid: int, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Gera 2 questões gêmeas (IA) para praticar o mesmo conceito. Gabarito não
+    é exposto aqui — o aluno responde primeiro."""
+    from app.modules.ai_registry.cliente import AiCallError
+    from app.modules.ai_registry.servico import SemConexaoIA
+    from app.modules.tutor.gemeas import gerar_gemeas
+
+    q = db.get(Question, qid)
+    if not q:
+        raise HTTPException(status_code=404, detail="Questão não encontrada.")
+    try:
+        return gerar_gemeas(db, q, user.id)
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except (AiCallError, ValueError) as e:
+        raise HTTPException(status_code=502, detail=f"A IA falhou: {e}") from e
+
+
+class GemeaRespostaIn(BaseModel):
+    letra: str
+
+
+@router.post("/gemeas/{twin_id}/responder")
+def responder_gemea(
+    twin_id: int, dados: GemeaRespostaIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)
+):
+    """Corrige a gêmea contra o gabarito que a própria IA gerou para ela."""
+    from app.db.models import TwinQuestion
+
+    tw = db.get(TwinQuestion, twin_id)
+    if not tw or tw.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Gêmea não encontrada.")
+    acertou = dados.letra.upper() == tw.gabarito
+    return {"acertou": acertou, "gabarito": tw.gabarito}

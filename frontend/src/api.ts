@@ -65,6 +65,7 @@ export type EnfaseDesempenho = { enfase: string; acertos: number; total: number;
 export type StatEnfase = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; enfase: string; amostra: number | null; acerto_pct: number | null; fonte: string; tipo_fonte: string; status: string }
 export type StatEnfaseInput = Omit<StatEnfase, "id">
 export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[]; classificacao?: Classificacao | null }
+export type GemeaT = { id: number; enunciado: string; alternativas: Record<string, string> }
 export type Explicacao = {
     correct: boolean; error_type: string; diagnosis: string; mini_lesson: string
     review_recommendation: string
@@ -123,6 +124,8 @@ export const api = {
     },
     revisaoDevidas: () => pedir<Questao[]>("/revisao"),
     responderRevisao: (qid: number, letra: string) => pedir<{ acertou: boolean }>(`/revisao/${qid}/responder`, { method: "POST", body: JSON.stringify({ letra }) }),
+    gerarGemeas: (qid: number) => pedir<GemeaT[]>(`/exames/questoes/${qid}/gemeas`, { method: "POST" }),
+    responderGemea: (twinId: number, letra: string) => pedir<{ acertou: boolean; gabarito: string }>(`/exames/gemeas/${twinId}/responder`, { method: "POST", body: JSON.stringify({ letra }) }),
     explicarIA: (qid: number, student_answer: string | null) =>
         pedir<Explicacao>(`/exames/questoes/${qid}/explicar`, { method: "POST", body: JSON.stringify({ student_answer }) }),
     transcreverIA: (qid: number) => pedir<{ enunciado: string; alternativas: Record<string, string> }>(`/exames/questoes/${qid}/transcrever`, { method: "POST" }),
