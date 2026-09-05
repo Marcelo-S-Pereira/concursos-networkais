@@ -12,6 +12,7 @@ from app.api.deps import usuario_atual
 from app.db.models import EmphasisPublicStat, Exam, ExamRules, SimulationAnswer, SimulationRun, User
 from app.db.session import get_db
 from app.modules.desempenho.mastery import por_enfase, rotulo_delta
+from app.modules.desempenho.revisao import agendar_erro
 
 router = APIRouter(prefix="/simulado")
 
@@ -92,6 +93,8 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
         if correta:
             acertos += 1
         itens_enfase.append((q.disciplina, correta))
+        if not correta:
+            agendar_erro(db, user.id, qid)
         db.add(SimulationAnswer(run_id=run.id, question_id=qid, letra=letra, correta=correta))
 
     run.status = "finished"

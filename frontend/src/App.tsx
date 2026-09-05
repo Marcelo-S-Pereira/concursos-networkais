@@ -3,6 +3,7 @@ import Cadastro from "./Cadastro"
 import Caderno from "./Caderno"
 import ConexoesIA from "./ConexoesIA"
 import Estatisticas from "./Estatisticas"
+import Revisao from "./Revisao"
 import Acesso from "./Acesso"
 import { api, type Usuario } from "./api"
 
@@ -19,7 +20,7 @@ export default function App() {
     return <Painel usuario={usuario} aoSair={() => setUsuario(null)} />
 }
 
-type Aba = "caderno" | "cadastro" | "ia" | "estat"
+type Aba = "caderno" | "revisao" | "cadastro" | "ia" | "estat"
 
 function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
     const [aba, setAba] = useState<Aba>("caderno")
@@ -55,12 +56,14 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
 
             <nav className="abas">
                 <button className={aba === "caderno" ? "ativa" : ""} onClick={() => setAba("caderno")}>Caderno de questões</button>
+                <button className={aba === "revisao" ? "ativa" : ""} onClick={() => setAba("revisao")}>Revisão</button>
                 {admin && <button className={aba === "cadastro" ? "ativa" : ""} onClick={() => setAba("cadastro")}>Cadastro de questões</button>}
                 {admin && <button className={aba === "ia" ? "ativa" : ""} onClick={() => setAba("ia")}>Cadastro de IA</button>}
                 {admin && <button className={aba === "estat" ? "ativa" : ""} onClick={() => setAba("estat")}>Estatísticas</button>}
             </nav>
 
             {aba === "caderno" && <Caderno modo={modo} />}
+            {aba === "revisao" && <Revisao />}
             {aba === "cadastro" && admin && <Cadastro />}
             {aba === "ia" && admin && <ConexoesIA />}
             {aba === "estat" && admin && <Estatisticas />}
