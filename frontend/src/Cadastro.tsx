@@ -127,6 +127,8 @@ function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: st
     const [minimos, setMinimos] = useState<Record<string, string>>({})
     const [corte, setCorte] = useState("")
     const [vagas, setVagas] = useState("")
+    const [inscritos, setInscritos] = useState("")
+    const [afericao, setAfericao] = useState<string | null>(null)
     const [salvo, setSalvo] = useState(false)
     const [carregada, setCarregada] = useState<import("./api").RegrasEditalT | null>(null)
 
@@ -140,6 +142,7 @@ function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: st
                 setMinimos(Object.fromEntries(Object.entries(r.minimos).map(([k, v]) => [k, String(v)])))
                 setCorte(r.nota_corte != null ? String(r.nota_corte) : "")
                 setVagas(r.vagas != null ? String(r.vagas) : "")
+                setInscritos(r.total_inscritos != null ? String(r.total_inscritos) : "")
             }
         }
     }
@@ -148,6 +151,7 @@ function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: st
         const mnum: Record<string, number> = {}; for (const d of disciplinas) if (minimos[d]) mnum[d] = Number(minimos[d])
         await api.gravarRegras(examId, {
             pesos: pnum, minimos: mnum, nota_corte: corte ? Number(corte) : null, vagas: vagas ? Number(vagas) : null,
+            total_inscritos: inscritos ? Number(inscritos) : null,
             fases: carregada?.fases ?? {}, minimo_pct_fase: carregada?.minimo_pct_fase ?? {}, materias_sem_zero: carregada?.materias_sem_zero ?? [],
         })
         setSalvo(true); setTimeout(() => setSalvo(false), 1500)
@@ -173,8 +177,15 @@ function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: st
                     <div className="regras-linha">
                         <label>Nota de corte<input type="number" step="0.1" value={corte} onChange={(e) => setCorte(e.target.value)} placeholder="opcional" /></label>
                         <label>Vagas<input type="number" value={vagas} onChange={(e) => setVagas(e.target.value)} placeholder="opcional" /></label>
+                        <label>Total de inscritos<input type="number" value={inscritos} onChange={(e) => setInscritos(e.target.value)} placeholder="opcional" /></label>
                         <button onClick={salvar}>{salvo ? "✓ salvo" : "Salvar regras"}</button>
+                        <button className="ia" onClick={async () => {
+                            setAfericao("aferindo…")
+                            try { const r = await api.aferirLLM(examId); setAfericao(`Semelhança do LLM com a lógica: ${r.similaridade_pct}% — ${r.veredito}`) }
+                            catch (e) { setAfericao(e instanceof Error ? e.message : "falha") }
+                        }}>Aferir LLM</button>
                     </div>
+                    {afericao && <p className="afericao-res">{afericao}</p>}
                     {carregada?.minimo_pct_fase && Object.keys(carregada.minimo_pct_fase).length > 0 && (
                         <div className="dica">
                             <b>Regra por fase (do edital):</b>

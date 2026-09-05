@@ -111,7 +111,9 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
     classificacao = None
     if regras:
         from app.modules.desempenho.classificacao import classificar
+        from app.modules.desempenho.ranking import estimar_ranking
         classificacao = classificar(regras, itens_enfase)
+        classificacao["ranking"] = estimar_ranking(db, exam, itens_enfase, regras)
 
     return ResultadoOut(
         acertos=acertos, total=total, respondidas=respondidas, em_branco=total - respondidas,

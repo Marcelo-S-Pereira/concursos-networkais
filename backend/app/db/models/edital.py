@@ -27,6 +27,7 @@ class ExamRules(Base):
     # nota ponderada mínima total para não ser eliminado.
     nota_corte: Mapped[float | None] = mapped_column(Float, nullable=True)
     vagas: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_inscritos: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Regra por FASE (edital Cesgranrio): agrupa disciplinas em fases e cobra um
     # mínimo percentual por fase, mais matérias que não podem zerar.

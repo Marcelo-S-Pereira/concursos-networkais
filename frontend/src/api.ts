@@ -59,8 +59,13 @@ export type Classificacao = {
     eliminado: boolean; motivos: string[]
     por_disciplina: Record<string, { acertos: number; total: number; peso: number }>
     por_fase: { fase: string; pontos: number; total: number; percentual: number; minimo_pct: number | null }[]
+    ranking?: {
+        status: string; candidato_pct?: number; publico_pct?: number; delta_pp?: number
+        percentil_estimado?: number; posicao_estimada?: number | null; total_inscritos?: number | null
+        vagas?: number | null; situacao?: string | null; confianca?: string; enfases_sem_dado?: string[]; observacao?: string
+    }
 }
-export type RegrasEditalT = { pesos: Record<string, number>; minimos: Record<string, number>; nota_corte: number | null; vagas: number | null; fases?: Record<string, string>; minimo_pct_fase?: Record<string, number>; materias_sem_zero?: string[] }
+export type RegrasEditalT = { pesos: Record<string, number>; minimos: Record<string, number>; nota_corte: number | null; vagas: number | null; total_inscritos?: number | null; fases?: Record<string, string>; minimo_pct_fase?: Record<string, number>; materias_sem_zero?: string[] }
 export type SimRun = { simulation_id: number; started_at: string; deadline_at: string; duration_seconds: number; question_count: number; status: string }
 export type EnfaseDesempenho = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number; historico_pct?: number | null; delta?: number | null; delta_rotulo?: string; amostra_historico?: number | null }
 export type StatEnfase = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; enfase: string; amostra: number | null; acerto_pct: number | null; fonte: string; tipo_fonte: string; status: string }
@@ -106,6 +111,7 @@ export const api = {
         return res.json() as Promise<Exame>
     },
     obterRegras: (examId: number) => pedir<RegrasEditalT | null>(`/exames/${examId}/regras`),
+    aferirLLM: (examId: number) => pedir<{ similaridade_pct: number; cenarios: number; checagens: number; veredito: string }>(`/exames/${examId}/aferir-llm`, { method: "POST" }),
     gravarRegras: (examId: number, r: RegrasEditalT) => pedir<RegrasEditalT>(`/exames/${examId}/regras`, { method: "PUT", body: JSON.stringify(r) }),
     apagarCaderno: (examId: number) => pedir<void>(`/exames/${examId}`, { method: "DELETE" }),
     questoes: (examId: number) => pedir<Questao[]>(`/exames/${examId}/questoes`),

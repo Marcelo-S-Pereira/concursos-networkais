@@ -253,6 +253,19 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                                 {resultado.classificacao.motivos.length > 0 && (
                                     <ul className="motivos">{resultado.classificacao.motivos.map((m, i) => <li key={i}>{m}</li>)}</ul>
                                 )}
+                                {resultado.classificacao.ranking?.status === "OK" && (
+                                    <div className="ranking">
+                                        <b>Ranking estimado</b> <span className="conf-tag">{resultado.classificacao.ranking.confianca}</span>
+                                        <p>Você {resultado.classificacao.ranking.candidato_pct}% · média pública {resultado.classificacao.ranking.publico_pct}% (Δ {(resultado.classificacao.ranking.delta_pp ?? 0) > 0 ? "+" : ""}{resultado.classificacao.ranking.delta_pp}pp)</p>
+                                        <p>Percentil ~{resultado.classificacao.ranking.percentil_estimado}%
+                                            {resultado.classificacao.ranking.posicao_estimada != null && ` · posição ~${resultado.classificacao.ranking.posicao_estimada}/${resultado.classificacao.ranking.total_inscritos}`}
+                                        </p>
+                                        {resultado.classificacao.ranking.situacao && <p className="situacao">{resultado.classificacao.ranking.situacao}</p>}
+                                    </div>
+                                )}
+                                {resultado.classificacao.ranking?.status === "PUBLIC_DATA_NOT_FOUND" && (
+                                    <p className="dica">Ranking: {resultado.classificacao.ranking.observacao}</p>
+                                )}
                             </div>
                         )}
                     </div>

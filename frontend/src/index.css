@@ -449,3 +449,8 @@ button.ia:hover { background: #5b21b6; }
 .fases-res { margin: 6px 0 0; padding-left: 18px; font-size: .82rem; }
 .fases-res li.abaixo { color: var(--falha); }
 .fases-res li.ok { color: var(--ok); }
+.ranking { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--borda); font-size: .85rem; }
+.ranking p { margin: 2px 0; }
+.ranking .situacao { font-weight: 600; }
+.conf-tag { font-size: .68rem; background: var(--suave); color: #fff; padding: 1px 7px; border-radius: 20px; }
+.afericao-res { font-size: .85rem; margin-top: 8px; padding: 8px; border-radius: 8px; background: rgba(109,40,217,.1); }
