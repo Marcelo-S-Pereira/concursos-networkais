@@ -1,26 +1,54 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 
+class AiPlatform(Base):
+    """Uma plataforma de IA: Together, Anthropic, OpenAI, Grok, OpenRouter...
+
+    Endpoint e chave moram AQUI, uma vez só. Os modelos (`AiConnection`) são
+    filhos e herdam os dois — assim girar a chave é uma edição, não N, e
+    cadastrar o quinto modelo de um provedor não pede a chave de novo.
+    """
+
+    __tablename__ = "ai_platforms"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    titulo: Mapped[str] = mapped_column(String(120))  # como o usuário chama, ex: "Together AI"
+    endpoint: Mapped[str] = mapped_column(String(500))  # base OpenAI-compatible
+    api_key_cifrada: Mapped[str] = mapped_column(String(1000))  # AES-256-GCM; "" = provedor local
+
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    modelos: Mapped[list["AiConnection"]] = relationship(
+        back_populates="plataforma", cascade="all, delete-orphan",
+    )
+
+
 class AiConnection(Base):
-    """Uma conexão de IA (provedor OpenAI-compatible). Configuração é DADO, não
+    """Um MODELO cadastrado dentro de uma plataforma. Configuração é DADO, não
     código: cadastrar/editar aqui troca provedor/modelo sem deploy.
 
-    Segue skill_conexao_padrao_LLM.md: uma linha por conexão, separadas por
-    `categoria`, cada categoria com sua própria conexão ativa e cadeia de
+    Endpoint e chave não moram aqui — vêm de `plataforma` (`AiPlatform`).
+
+    Segue skill_conexao_padrao_LLM.md: uma linha por modelo, separadas por
+    `categoria`, cada categoria com seu próprio modelo ativo e cadeia de
     fallback.
     """
 
     __tablename__ = "ai_connections"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    platform_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_platforms.id", ondelete="CASCADE"), index=True,
+    )
     nome: Mapped[str] = mapped_column(String(120))
-    endpoint: Mapped[str] = mapped_column(String(500))  # base OpenAI-compatible, ex: https://api.together.xyz/v1
-    api_key_cifrada: Mapped[str] = mapped_column(String(1000))  # AES-256-GCM; pode ser "" (provedor local)
     modelo: Mapped[str] = mapped_column(String(200))  # o "model" da chamada de chat/visão
 
     # categoria: texto | visao | embeddings | transcricao
@@ -48,6 +76,18 @@ class AiConnection(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+
+    plataforma: Mapped["AiPlatform"] = relationship(back_populates="modelos", lazy="joined")
+
+    # Atalhos: o cliente e o resto do app seguem falando conn.endpoint /
+    # conn.api_key_cifrada; quem responde agora é a plataforma.
+    @property
+    def endpoint(self) -> str:
+        return self.plataforma.endpoint
+
+    @property
+    def api_key_cifrada(self) -> str:
+        return self.plataforma.api_key_cifrada
 
 class AiCallLog(Base):
     """Uma linha por chamada de IA. Guarda tokens e QUAL conexão atendeu — o

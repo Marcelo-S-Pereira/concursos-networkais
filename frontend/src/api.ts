@@ -64,16 +64,21 @@ export type Explicacao = {
     review_recommendation: string
     memory_trick: { memory_hook: string; rapid_rule: string; steps: string[]; applies_when: string; warning: string }
 }
+export type Plataforma = {
+    id: number; titulo: string; endpoint: string; chave_mascarada: string; qtd_modelos: number
+}
+export type PlataformaInput = { titulo: string; endpoint: string; api_key: string }
 export type ConexaoIA = {
-    id: number; nome: string; endpoint: string; modelo: string; categoria: string
+    id: number; platform_id: number; plataforma_titulo: string
+    nome: string; modelo: string; categoria: string
     tipo_deploy: string; ativa: boolean; ordem_fallback: number | null
     max_tokens: number; temperatura: number
     context_window_tokens: number | null; rate_limit_rpm: number | null
     preco_entrada_por_milhao: number | null; preco_saida_por_milhao: number | null
-    moeda: string; chave_mascarada: string
+    moeda: string
 }
 export type ConexaoInput = {
-    nome: string; endpoint: string; api_key: string; modelo: string; categoria: string
+    platform_id: number; nome: string; modelo: string; categoria: string
     tipo_deploy?: string; max_tokens?: number; temperatura?: number
     context_window_tokens?: number | null; rate_limit_rpm?: number | null
     preco_entrada_por_milhao?: number | null; preco_saida_por_milhao?: number | null
@@ -129,7 +134,11 @@ export const api = {
     apagarConexao: (id: number) => pedir<void>(`/ai/conexoes/${id}`, { method: "DELETE" }),
     ativarConexao: (id: number) => pedir<ConexaoIA[]>(`/ai/conexoes/${id}/ativar`, { method: "POST" }),
     fallbackConexao: (id: number, ordem: number | null) => pedir<ConexaoIA[]>(`/ai/conexoes/${id}/fallback`, { method: "POST", body: JSON.stringify({ ordem }) }),
-    revelarChave: (id: number) => pedir<{ api_key: string }>(`/ai/conexoes/${id}/revelar`),
+    plataformas: () => pedir<Plataforma[]>("/ai/plataformas"),
+    criarPlataforma: (d: PlataformaInput) => pedir<Plataforma>("/ai/plataformas", { method: "POST", body: JSON.stringify(d) }),
+    editarPlataforma: (id: number, d: PlataformaInput) => pedir<Plataforma>(`/ai/plataformas/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    apagarPlataforma: (id: number) => pedir<void>(`/ai/plataformas/${id}`, { method: "DELETE" }),
+    revelarChave: (id: number) => pedir<{ api_key: string }>(`/ai/plataformas/${id}/revelar`),
     testarConexao: (id: number) => pedir<{ ok: boolean | null; resposta?: string; dimensao?: number }>(`/ai/conexoes/${id}/testar`, { method: "POST" }),
     me: () => pedir<Usuario>("/auth/me"),
     cadastrar: (d: DadosCadastro) => pedir<{ mensagem: string }>("/auth/cadastro", { method: "POST", body: JSON.stringify(d) }),

@@ -86,7 +86,7 @@ input.codigo {
 form.cartao { display: grid; gap: 16px; }
 label { display: grid; gap: 6px; font-size: .9rem; color: var(--suave); }
 
-input {
+input, select {
     font: inherit;
     padding: 12px 14px;
     border: 1px solid var(--borda);
@@ -95,7 +95,14 @@ input {
     color: var(--texto);
     width: 100%;
 }
-input:focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; }
+input:focus-visible, select:focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; }
+
+/* "voltar à lista" no campo de modelo: link, não botão de ação. */
+.form-ia .link {
+    background: none; border: 0; padding: 2px 0; width: fit-content;
+    color: var(--suave); font-size: .74rem; cursor: pointer; text-decoration: underline;
+}
+.form-ia .link:hover { color: var(--texto); }
 
 button {
     font: inherit; font-weight: 600;
@@ -389,3 +396,33 @@ button.ia:hover { background: #5b21b6; }
 .col-rot { font-size: .72rem; color: var(--suave); }
 .enun-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .modo-celular .enun-2col { grid-template-columns: 1fr; }
+
+/* ---- Plataformas de IA: plataforma (mestre) → categorias → modelos ---- */
+.conexoes-ia { display: grid; gap: 14px; }
+.topo-plat { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.topo-plat h2 { margin: 0 0 2px; font-size: 1.05rem; }
+.topo-plat .dica { font-size: .78rem; color: var(--suave); }
+
+.card-plat { border: 1px solid var(--borda); border-radius: 12px; background: var(--fundo); overflow: hidden; }
+.card-plat.nova { padding: 14px; }
+.card-plat.nova h3 { margin: 0 0 10px; font-size: .92rem; }
+.plat-topo {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 14px; cursor: pointer; background: var(--fundo2, rgba(127,127,127,.06));
+}
+.plat-titulo { font-size: 1rem; }
+.plat-endpoint, .plat-topo .chave { font-size: .74rem; color: var(--suave); font-family: ui-monospace, monospace; }
+.plat-corpo { padding: 14px; display: grid; gap: 14px; }
+
+.modelos-por-categoria { display: grid; gap: 12px; }
+.sec-cat { border-top: 1px solid var(--borda); padding-top: 10px; }
+.sec-cat header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.sec-cat h4 { margin: 0; font-size: .85rem; font-weight: 600; }
+.sec-cat h4 .dica { font-weight: 400; font-size: .72rem; color: var(--suave); }
+.vazio-cat { margin: 0; font-size: .76rem; color: var(--suave); font-style: italic; }
+
+.card-modelo { border: 1px solid var(--borda); border-radius: 9px; margin-bottom: 8px; }
+.card-modelo.ativa { border-color: var(--ok); }
+.card-modelo.novo { padding: 12px; }
+.modelo-topo { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; flex-wrap: wrap; }
+.modelo-corpo { padding: 0 12px 12px; display: grid; gap: 10px; }

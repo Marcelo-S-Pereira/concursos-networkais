@@ -1,24 +1,30 @@
 import httpx
 import pytest
 
-from app.db.models import AiConnection
+from app.db.models import AiCallLog, AiConnection, AiPlatform
 from app.db.session import SessionLocal
 from app.modules.ai_registry import cliente, resolver, servico
 
 
 @pytest.fixture
 def conexao_texto():
+    """Plataforma + modelo de teste. Roda no banco de teste (ver conftest), e
+    ainda assim apaga só o que criou, pelo id — nunca `delete()` sem filtro em
+    tabela de dados (Registro de Atividades [034])."""
     db = SessionLocal()
     from app.core.crypto import cifrar_ia
-    db.query(AiConnection).delete()
-    c = AiConnection(nome="Mock", endpoint="https://mock.local/v1", api_key_cifrada=cifrar_ia("k-test"),
-                     modelo="mock-model", categoria="texto", ativa=True)
+    p = AiPlatform(titulo="Mock", endpoint="https://mock.local/v1", api_key_cifrada=cifrar_ia("k-test"))
+    db.add(p)
+    db.flush()
+    c = AiConnection(platform_id=p.id, nome="Mock", modelo="mock-model", categoria="texto", ativa=True)
     db.add(c)
     db.commit()
     db.refresh(c)
     resolver.invalidar_cache()
     yield db, c
-    db.query(AiConnection).delete()
+    db.query(AiCallLog).filter(AiCallLog.connection_id == c.id).delete()
+    db.query(AiConnection).filter(AiConnection.id == c.id).delete()
+    db.query(AiPlatform).filter(AiPlatform.id == p.id).delete()
     db.commit()
     db.close()
     resolver.invalidar_cache()
@@ -53,13 +59,12 @@ def test_conversar_chama_provider_e_loga(conexao_texto, monkeypatch):
     monkeypatch.setattr(cliente.httpx, "post", fake_post)
     out = servico.conversar(db, "texto", [{"role": "user", "content": "explique"}], origem="teste")
     assert out == "resposta ok"
-    from app.db.models import AiCallLog
     log = db.query(AiCallLog).order_by(AiCallLog.id.desc()).first()
     assert log.sucesso and log.total_tokens == 8 and log.connection_id == c.id
 
 
 def test_resposta_vazia_vira_erro_com_usage(conexao_texto, monkeypatch):
-    db, _ = conexao_texto
+    db, conexao = conexao_texto
 
     def fake_post(url, headers, json, timeout):
         req = httpx.Request("POST", url)
@@ -72,5 +77,6 @@ def test_resposta_vazia_vira_erro_com_usage(conexao_texto, monkeypatch):
 
     monkeypatch.setattr(cliente.httpx, "post", fake_post)
     with pytest.raises(cliente.AiCallError) as ei:
-        cliente.chamar_chat(db.query(AiConnection).first(), [{"role": "user", "content": "x"}])
+        conn = db.query(AiConnection).filter(AiConnection.id == conexao.id).one()
+        cliente.chamar_chat(conn, [{"role": "user", "content": "x"}])
     assert ei.value.usage["completion_tokens"] == 4000

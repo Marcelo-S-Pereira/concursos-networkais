@@ -92,3 +92,6 @@ temp/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Backups locais de tabelas (contem chaves cifradas) - nunca versionar
+backups_local/
