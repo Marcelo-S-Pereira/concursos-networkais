@@ -76,6 +76,7 @@ export type Plataforma = {
     id: number; titulo: string; endpoint: string; chave_mascarada: string; qtd_modelos: number
 }
 export type PlataformaInput = { titulo: string; endpoint: string; api_key: string }
+export type RagDoc = { id: number; titulo: string; colecao: string; chunk_count: number; indexado: boolean; erro: string | null }
 export type ConexaoIA = {
     id: number; platform_id: number; plataforma_titulo: string
     nome: string; modelo: string; categoria: string
@@ -142,6 +143,15 @@ export const api = {
     entregarSimulado: (runId: number, respostas: Record<number, string>) =>
         pedir<SimResultado>(`/simulado/${runId}/entregar`, { method: "POST", body: JSON.stringify({ respostas }) }),
 
+    ragDocs: () => pedir<RagDoc[]>("/rag/documentos"),
+    ragImportar: async (fd: FormData) => {
+        const res = await fetch(`/api/v1/rag/documentos/importar`, { method: "POST", credentials: "include", body: fd })
+        if (!res.ok) { const c = await res.json().catch(() => null); throw new Error(c?.detail ?? "Falha ao importar") }
+        return res.json() as Promise<RagDoc>
+    },
+    ragReindexar: (id: number) => pedir<RagDoc>(`/rag/documentos/${id}/reindexar`, { method: "POST" }),
+    ragApagar: (id: number) => pedir<void>(`/rag/documentos/${id}`, { method: "DELETE" }),
+    ragBuscar: (consulta: string) => pedir<{ resultados: { titulo: string; chunk: number; conteudo: string }[] }>("/rag/buscar", { method: "POST", body: JSON.stringify({ consulta }) }),
     conexoesIA: () => pedir<ConexaoIA[]>("/ai/conexoes"),
     criarConexao: (d: ConexaoInput) => pedir<ConexaoIA>("/ai/conexoes", { method: "POST", body: JSON.stringify(d) }),
     editarConexao: (id: number, d: ConexaoInput) => pedir<ConexaoIA>(`/ai/conexoes/${id}`, { method: "PATCH", body: JSON.stringify(d) }),

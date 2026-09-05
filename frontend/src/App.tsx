@@ -3,6 +3,7 @@ import Cadastro from "./Cadastro"
 import Caderno from "./Caderno"
 import ConexoesIA from "./ConexoesIA"
 import Estatisticas from "./Estatisticas"
+import Biblioteca from "./Biblioteca"
 import Revisao from "./Revisao"
 import Acesso from "./Acesso"
 import { api, type Usuario } from "./api"
@@ -20,7 +21,7 @@ export default function App() {
     return <Painel usuario={usuario} aoSair={() => setUsuario(null)} />
 }
 
-type Aba = "caderno" | "revisao" | "cadastro" | "ia" | "estat"
+type Aba = "caderno" | "revisao" | "cadastro" | "ia" | "estat" | "rag"
 
 function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
     const [aba, setAba] = useState<Aba>("caderno")
@@ -60,6 +61,7 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
                 {admin && <button className={aba === "cadastro" ? "ativa" : ""} onClick={() => setAba("cadastro")}>Cadastro de questões</button>}
                 {admin && <button className={aba === "ia" ? "ativa" : ""} onClick={() => setAba("ia")}>Cadastro de IA</button>}
                 {admin && <button className={aba === "estat" ? "ativa" : ""} onClick={() => setAba("estat")}>Estatísticas</button>}
+                {admin && <button className={aba === "rag" ? "ativa" : ""} onClick={() => setAba("rag")}>Biblioteca</button>}
             </nav>
 
             {aba === "caderno" && <Caderno modo={modo} />}
@@ -67,6 +69,7 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
             {aba === "cadastro" && admin && <Cadastro />}
             {aba === "ia" && admin && <ConexoesIA />}
             {aba === "estat" && admin && <Estatisticas />}
+            {aba === "rag" && admin && <Biblioteca />}
         </main>
     )
 }

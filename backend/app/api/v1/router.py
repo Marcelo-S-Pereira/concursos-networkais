@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import ai_admin, auth, edital, estatisticas, health, questoes, revisao, simulado
+from app.api.v1 import ai_admin, auth, edital, estatisticas, health, questoes, rag, revisao, simulado
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router, tags=["health"])
@@ -12,3 +12,4 @@ api_router.include_router(simulado.router, tags=["simulado"])
 api_router.include_router(estatisticas.router, tags=["estatisticas"])
 api_router.include_router(edital.router, tags=["edital"])
 api_router.include_router(revisao.router, tags=["revisao"])
+api_router.include_router(rag.router, tags=["rag"])

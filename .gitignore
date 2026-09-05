@@ -35,6 +35,8 @@ service-account*.json
 *.doc
 *.epub
 provas_pdf_gabarito/
+editais/
+uploads/editais/
 provas/
 material/
 data/
