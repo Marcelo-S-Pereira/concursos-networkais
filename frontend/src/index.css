@@ -454,3 +454,4 @@ button.ia:hover { background: #5b21b6; }
 .ranking .situacao { font-weight: 600; }
 .conf-tag { font-size: .68rem; background: var(--suave); color: #fff; padding: 1px 7px; border-radius: 20px; }
 .afericao-res { font-size: .85rem; margin-top: 8px; padding: 8px; border-radius: 8px; background: rgba(109,40,217,.1); }
+.sinc-modelos { margin: 8px 0; font-size: .82rem; }

@@ -11,49 +11,10 @@ const CATEGORIAS: { chave: string; rotulo: string; dica: string }[] = [
     { chave: "voz", rotulo: "TTS — Voz", dica: "ainda não chamado pelo backend" },
 ]
 
-// Endpoints conhecidos, para não digitar. A plataforma é um registro só:
-// endpoint + chave uma vez, e todos os modelos dela herdam.
-const PLATAFORMAS_CONHECIDAS: { titulo: string; endpoint: string }[] = [
-    { titulo: "Together AI", endpoint: "https://api.together.xyz/v1" },
-    { titulo: "OpenAI", endpoint: "https://api.openai.com/v1" },
-    { titulo: "OpenRouter", endpoint: "https://openrouter.ai/api/v1" },
-    { titulo: "Grok (xAI)", endpoint: "https://api.x.ai/v1" },
-    { titulo: "Hugging Face", endpoint: "https://router.huggingface.co/v1" },
-]
 
-// Modelos sugeridos por plataforma e categoria. Os da Together foram conferidos
-// na documentação dela; as outras entram conforme forem usadas. A lista nunca é
-// gaiola: "outro (digitar)" sempre existe.
-const MODELOS: Record<string, Record<string, { id: string; nota?: string }[]>> = {
-    "api.together.xyz": {
-        texto: [
-            { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
-            { id: "deepseek-ai/DeepSeek-V4-Flash-0731" },
-            { id: "zai-org/GLM-5.3-Flash" },
-        ],
-        visao: [
-            { id: "Qwen/Qwen3.5-9B", nota: "recomendado pela Together" },
-            { id: "moonshotai/Kimi-K3", nota: "lê print, gráfico e documento" },
-            { id: "MiniMaxAI/MiniMax-M3" },
-            { id: "meta-models/Muse-Glimmer-30B" },
-        ],
-        transcricao: [
-            { id: "openai/whisper-large-v3" },
-            { id: "nvidia/parakeet-tdt-0.6b-v3" },
-        ],
-        voz: [
-            { id: "cartesia/sonic-3" },
-            { id: "canopylabs/orpheus-3b-0.1-ft" },
-        ],
-    },
-}
 
 const OUTRO = "__outro__"
 
-function modelosDe(endpoint: string, categoria: string): { id: string; nota?: string }[] {
-    const host = endpoint.replace(/^https?:\/\//, "").split("/")[0]
-    return MODELOS[host]?.[categoria] ?? []
-}
 
 export default function ConexoesIA() {
     const [plataformas, setPlataformas] = useState<Plataforma[] | null>(null)
@@ -178,6 +139,8 @@ function CardPlataforma({
                         </div>
                     )}
 
+                    <SincronizarModelos plataforma={plataforma} />
+
                     <div className="modelos-por-categoria">
                         {CATEGORIAS.map((cat) => (
                             <SecaoCategoria
@@ -191,6 +154,23 @@ function CardPlataforma({
                     </div>
                 </div>
             )}
+        </div>
+    )
+}
+
+function SincronizarModelos({ plataforma }: { plataforma: Plataforma }) {
+    const [msg, setMsg] = useState<string | null>(null)
+    const [rodando, setRodando] = useState(false)
+    async function sincronizar() {
+        setRodando(true); setMsg(null)
+        try { const r = await api.sincronizarCatalogo(plataforma.id); setMsg(`${r.novos_no_catalogo} novos modelos (de ${r.modelos_no_provedor} no provedor) no catálogo.`) }
+        catch (e) { setMsg(e instanceof Error ? e.message : "falha") }
+        finally { setRodando(false) }
+    }
+    return (
+        <div className="sinc-modelos">
+            <button className="secundario" disabled={rodando} onClick={sincronizar}>{rodando ? "sincronizando…" : "⟳ Sincronizar modelos do provedor"}</button>
+            {msg && <span className="dica"> {msg}</span>}
         </div>
     )
 }
@@ -336,6 +316,15 @@ function FormPlataforma({
     })
     const [salvando, setSalvando] = useState(false)
     const [erro, setErro] = useState<string | null>(null)
+    const [conhecidas, setConhecidas] = useState<{ nome: string; endpoint: string }[]>([])
+
+    useEffect(() => { api.catalogoPlataformas().then(setConhecidas).catch(() => setConhecidas([])) }, [])
+
+    function escolher(nome: string) {
+        setF((x) => ({ ...x, titulo: nome }))
+        const c = conhecidas.find((p) => p.nome === nome)
+        if (c) setF((x) => ({ ...x, titulo: nome, endpoint: c.endpoint }))
+    }
 
     return (
         <div className="form-ia">
@@ -343,17 +332,12 @@ function FormPlataforma({
                 Plataforma
                 <input
                     value={f.titulo}
-                    onChange={(e) => setF((x) => ({ ...x, titulo: e.target.value }))}
-                    placeholder="ex: Together AI"
+                    onChange={(e) => escolher(e.target.value)}
+                    placeholder="ex: Together"
                     list="plataformas-conhecidas"
-                    onBlur={(e) => {
-                        // Escolheu um nome conhecido e o endpoint está vazio? preenche.
-                        const c = PLATAFORMAS_CONHECIDAS.find((p) => p.titulo === e.target.value)
-                        if (c && !f.endpoint) setF((x) => ({ ...x, endpoint: c.endpoint }))
-                    }}
                 />
                 <datalist id="plataformas-conhecidas">
-                    {PLATAFORMAS_CONHECIDAS.map((p) => <option key={p.titulo} value={p.titulo} />)}
+                    {conhecidas.map((p) => <option key={p.nome} value={p.nome} />)}
                 </datalist>
             </label>
             <label>
@@ -405,18 +389,29 @@ function FormModelo({
     aoSalvar: (d: ConexaoInput) => Promise<void>
     aoCancelar?: () => void
 }) {
-    const lista = modelosDe(plataforma.endpoint, categoria)
+    const [lista, setLista] = useState<{ id: string; nota?: string }[]>([])
+    const [livre, setLivre] = useState(false)
     const [f, setF] = useState<ConexaoInput>({
         platform_id: plataforma.id,
         nome: inicial?.nome ?? `${plataforma.titulo} — ${categoria}`,
-        modelo: inicial?.modelo ?? lista[0]?.id ?? "",
+        modelo: inicial?.modelo ?? "",
         categoria,
         max_tokens: inicial?.max_tokens ?? 4000,
         temperatura: inicial?.temperatura ?? 0.7,
     })
-    const [livre, setLivre] = useState(
-        lista.length === 0 || (!!inicial?.modelo && !lista.some((m) => m.id === inicial.modelo)),
-    )
+
+    // carrega a lista de modelos do CATÁLOGO (banco), por plataforma+categoria
+    useEffect(() => {
+        api.catalogoModelos(plataforma.titulo, categoria)
+            .then((ms) => {
+                const l = ms.map((m) => ({ id: m.model_id, nota: m.rotulo || (m.dim ? `dim ${m.dim}` : "") }))
+                setLista(l)
+                if (!inicial && l[0]) setF((x) => (x.modelo ? x : { ...x, modelo: l[0].id }))
+                if (l.length === 0 || (!!inicial?.modelo && !l.some((m) => m.id === inicial.modelo))) setLivre(true)
+            })
+            .catch(() => { setLista([]); setLivre(true) })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
     const [salvando, setSalvando] = useState(false)
     const [erro, setErro] = useState<string | null>(null)
 

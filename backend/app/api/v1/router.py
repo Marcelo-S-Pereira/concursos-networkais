@@ -1,12 +1,13 @@
 from fastapi import APIRouter
 
-from app.api.v1 import ai_admin, auth, edital, estatisticas, health, questoes, rag, revisao, simulado
+from app.api.v1 import ai_admin, auth, catalogo, edital, estatisticas, health, questoes, rag, revisao, simulado
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, tags=["auth"])
 api_router.include_router(questoes.router, tags=["questoes"])
 api_router.include_router(ai_admin.router, tags=["ai"])
+api_router.include_router(catalogo.router, tags=["catalogo"])
 api_router.include_router(ai_admin.router_plataformas, tags=["ai"])
 api_router.include_router(simulado.router, tags=["simulado"])
 api_router.include_router(estatisticas.router, tags=["estatisticas"])

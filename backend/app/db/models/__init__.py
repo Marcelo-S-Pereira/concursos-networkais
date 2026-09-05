@@ -1,4 +1,5 @@
 from app.db.models.ai import AiCallLog, AiConnection, AiPlatform
+from app.db.models.catalogo import CatalogModel, CatalogPlatform
 from app.db.models.edital import ExamRules
 from app.db.models.estatistica import EmphasisPublicStat
 from app.db.models.gemea import TwinQuestion
@@ -13,6 +14,8 @@ __all__ = [
     "AiCallLog",
     "AiConnection",
     "AiPlatform",
+    "CatalogModel",
+    "CatalogPlatform",
     "Choice",
     "EmphasisPublicStat",
     "Exam",

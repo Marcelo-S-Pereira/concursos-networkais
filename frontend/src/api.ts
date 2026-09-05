@@ -158,6 +158,10 @@ export const api = {
     ragReindexar: (id: number) => pedir<RagDoc>(`/rag/documentos/${id}/reindexar`, { method: "POST" }),
     ragApagar: (id: number) => pedir<void>(`/rag/documentos/${id}`, { method: "DELETE" }),
     ragBuscar: (consulta: string) => pedir<{ resultados: { titulo: string; chunk: number; conteudo: string }[] }>("/rag/buscar", { method: "POST", body: JSON.stringify({ consulta }) }),
+    catalogoPlataformas: () => pedir<{ nome: string; endpoint: string }[]>("/ai/catalogo/plataformas"),
+    catalogoModelos: (plataforma: string, categoria: string) =>
+        pedir<{ id: number; model_id: string; rotulo: string; dim: number | null; padrao: boolean }[]>(`/ai/catalogo/modelos?plataforma=${encodeURIComponent(plataforma)}&categoria=${categoria}`),
+    sincronizarCatalogo: (platformId: number) => pedir<{ plataforma: string; modelos_no_provedor: number; novos_no_catalogo: number }>(`/ai/catalogo/sincronizar/${platformId}`, { method: "POST" }),
     conexoesIA: () => pedir<ConexaoIA[]>("/ai/conexoes"),
     criarConexao: (d: ConexaoInput) => pedir<ConexaoIA>("/ai/conexoes", { method: "POST", body: JSON.stringify(d) }),
     editarConexao: (id: number, d: ConexaoInput) => pedir<ConexaoIA>(`/ai/conexoes/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
