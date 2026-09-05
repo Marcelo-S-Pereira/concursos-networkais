@@ -10,6 +10,21 @@ from app.db.models.tutor import LlmTeachingOutput
 from app.db.models.user import LoginCode, User
 
 __all__ = [
-    "AiCallLog", "AiConnection", "AiPlatform", "Choice", "EmphasisPublicStat", "Exam", "ExamRules", "LoginCode",
-    "LlmTeachingOutput", "Question", "RagChunk", "RagDocument", "ReviewSchedule", "SimulationAnswer", "SimulationRun", "TwinQuestion", "User",
+    "AiCallLog",
+    "AiConnection",
+    "AiPlatform",
+    "Choice",
+    "EmphasisPublicStat",
+    "Exam",
+    "ExamRules",
+    "LlmTeachingOutput",
+    "LoginCode",
+    "Question",
+    "RagChunk",
+    "RagDocument",
+    "ReviewSchedule",
+    "SimulationAnswer",
+    "SimulationRun",
+    "TwinQuestion",
+    "User",
 ]
