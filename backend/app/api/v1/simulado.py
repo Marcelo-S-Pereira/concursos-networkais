@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import usuario_atual
-from app.db.models import EmphasisPublicStat, Exam, SimulationAnswer, SimulationRun, User
+from app.db.models import EmphasisPublicStat, Exam, ExamRules, SimulationAnswer, SimulationRun, User
 from app.db.session import get_db
 from app.modules.desempenho.mastery import por_enfase, rotulo_delta
 
@@ -43,6 +43,7 @@ class ResultadoOut(BaseModel):
     encerrado_no_prazo: bool
     resultado: dict[int, bool]
     por_enfase: list[dict]
+    classificacao: dict | None
 
 
 @router.post("/iniciar", response_model=RunOut)
@@ -101,10 +102,19 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
     total = len(questoes)
     enfases = por_enfase(itens_enfase)
     _anexar_historico(db, exam, enfases)
+
+    from sqlalchemy import select
+    regras = db.execute(select(ExamRules).where(ExamRules.exam_id == exam.id)).scalar_one_or_none()
+    classificacao = None
+    if regras:
+        from app.modules.desempenho.classificacao import classificar
+        classificacao = classificar(regras, itens_enfase)
+
     return ResultadoOut(
         acertos=acertos, total=total, respondidas=respondidas, em_branco=total - respondidas,
         percentual_bruto=round(acertos / total * 100, 1) if total else 0.0,
         encerrado_no_prazo=no_prazo, resultado=resultado, por_enfase=enfases,
+        classificacao=classificacao,
     )
 
 

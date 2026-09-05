@@ -112,7 +112,69 @@ function Lista({ exameId }: { exameId: number }) {
     useEffect(() => { api.questoes(exameId).then(setQs).catch(() => setQs([])) }, [exameId])
     if (!qs) return <p className="neutro">Carregando questões…</p>
     const atualizar = (q: Questao) => setQs((l) => l!.map((x) => (x.id === q.id ? q : x)))
-    return <div>{qs.filter((q) => !q.descartada).map((q) => <CartaoCadastro key={q.id} examId={exameId} q={q} aoMudar={atualizar} />)}</div>
+    const disciplinas = [...new Set(qs.map((q) => q.disciplina).filter(Boolean))]
+    return (
+        <div>
+            <RegrasEdital examId={exameId} disciplinas={disciplinas} />
+            {qs.filter((q) => !q.descartada).map((q) => <CartaoCadastro key={q.id} examId={exameId} q={q} aoMudar={atualizar} />)}
+        </div>
+    )
+}
+
+function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: string[] }) {
+    const [aberto, setAberto] = useState(false)
+    const [pesos, setPesos] = useState<Record<string, string>>({})
+    const [minimos, setMinimos] = useState<Record<string, string>>({})
+    const [corte, setCorte] = useState("")
+    const [vagas, setVagas] = useState("")
+    const [salvo, setSalvo] = useState(false)
+
+    async function abrir() {
+        const a = !aberto; setAberto(a)
+        if (a) {
+            const r = await api.obterRegras(examId)
+            if (r) {
+                setPesos(Object.fromEntries(Object.entries(r.pesos).map(([k, v]) => [k, String(v)])))
+                setMinimos(Object.fromEntries(Object.entries(r.minimos).map(([k, v]) => [k, String(v)])))
+                setCorte(r.nota_corte != null ? String(r.nota_corte) : "")
+                setVagas(r.vagas != null ? String(r.vagas) : "")
+            }
+        }
+    }
+    async function salvar() {
+        const pnum: Record<string, number> = {}; for (const d of disciplinas) if (pesos[d]) pnum[d] = Number(pesos[d])
+        const mnum: Record<string, number> = {}; for (const d of disciplinas) if (minimos[d]) mnum[d] = Number(minimos[d])
+        await api.gravarRegras(examId, { pesos: pnum, minimos: mnum, nota_corte: corte ? Number(corte) : null, vagas: vagas ? Number(vagas) : null })
+        setSalvo(true); setTimeout(() => setSalvo(false), 1500)
+    }
+
+    return (
+        <div className="regras-edital">
+            <button className="link" onClick={abrir}>{aberto ? "▾ ocultar regras do edital" : "▸ regras do edital (pesos, mínimos, nota de corte)"}</button>
+            {aberto && (
+                <div className="regras-form">
+                    <table className="tabela-regras">
+                        <thead><tr><th>Disciplina</th><th>Peso/questão</th><th>Mínimo de acertos</th></tr></thead>
+                        <tbody>
+                            {disciplinas.map((d) => (
+                                <tr key={d}>
+                                    <td>{d}</td>
+                                    <td><input type="number" step="0.1" value={pesos[d] ?? ""} onChange={(e) => setPesos({ ...pesos, [d]: e.target.value })} placeholder="1" /></td>
+                                    <td><input type="number" value={minimos[d] ?? ""} onChange={(e) => setMinimos({ ...minimos, [d]: e.target.value })} placeholder="—" /></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <div className="regras-linha">
+                        <label>Nota de corte<input type="number" step="0.1" value={corte} onChange={(e) => setCorte(e.target.value)} placeholder="opcional" /></label>
+                        <label>Vagas<input type="number" value={vagas} onChange={(e) => setVagas(e.target.value)} placeholder="opcional" /></label>
+                        <button onClick={salvar}>{salvo ? "✓ salvo" : "Salvar regras"}</button>
+                    </div>
+                    <p className="dica">Abaixo do mínimo em qualquer bloco, ou nota abaixo do corte = eliminado no fim do simulado.</p>
+                </div>
+            )}
+        </div>
+    )
 }
 
 function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; aoMudar: (q: Questao) => void }) {

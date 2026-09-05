@@ -232,6 +232,19 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                                 ))}
                             </div>
                         )}
+                        {"classificacao" in resultado && resultado.classificacao && (
+                            <div className={`classificacao ${resultado.classificacao.eliminado ? "elim" : "ok"}`}>
+                                <h4>Classificação (edital)</h4>
+                                <p className="veredito">
+                                    {resultado.classificacao.eliminado ? "✕ ELIMINADO" : "✓ CLASSIFICADO"}
+                                    {" · nota ponderada "}<strong>{resultado.classificacao.nota_ponderada}</strong>
+                                    {resultado.classificacao.nota_corte != null && ` / corte ${resultado.classificacao.nota_corte}`}
+                                </p>
+                                {resultado.classificacao.motivos.length > 0 && (
+                                    <ul className="motivos">{resultado.classificacao.motivos.map((m, i) => <li key={i}>{m}</li>)}</ul>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
             </aside>

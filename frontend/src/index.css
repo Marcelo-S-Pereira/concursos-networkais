@@ -426,3 +426,18 @@ button.ia:hover { background: #5b21b6; }
 .card-modelo.novo { padding: 12px; }
 .modelo-topo { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; flex-wrap: wrap; }
 .modelo-corpo { padding: 0 12px 12px; display: grid; gap: 10px; }
+
+/* --- regras do edital + classificação --- */
+.regras-edital { margin-bottom: 12px; border: 1px solid var(--borda); border-radius: 10px; padding: 10px 12px; }
+.regras-form { margin-top: 8px; }
+.tabela-regras { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.tabela-regras th, .tabela-regras td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--borda); }
+.tabela-regras input { width: 90px; }
+.regras-linha { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-top: 10px; }
+.regras-linha label { display: grid; gap: 4px; font-size: .8rem; color: var(--suave); }
+.classificacao { margin-top: 12px; padding: 12px; border-radius: 10px; }
+.classificacao.ok { background: rgba(53,210,155,.12); border: 1px solid var(--ok); }
+.classificacao.elim { background: rgba(192,38,38,.12); border: 1px solid var(--falha); }
+.classificacao h4 { margin: 0 0 6px; font-size: .82rem; color: var(--suave); }
+.classificacao .veredito { margin: 0 0 6px; font-weight: 600; }
+.motivos { margin: 0; padding-left: 18px; font-size: .82rem; color: var(--falha); }

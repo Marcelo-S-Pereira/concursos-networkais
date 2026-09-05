@@ -54,11 +54,17 @@ export type Questao = {
 }
 export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
 export type ResultadoSimulado = { total: number; respondidas: number; acertos: number; percentual_bruto: number; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[] }
+export type Classificacao = {
+    nota_ponderada: number; nota_corte: number | null; vagas: number | null
+    eliminado: boolean; motivos: string[]
+    por_disciplina: Record<string, { acertos: number; total: number; peso: number; minimo: number | null }>
+}
+export type RegrasEditalT = { pesos: Record<string, number>; minimos: Record<string, number>; nota_corte: number | null; vagas: number | null }
 export type SimRun = { simulation_id: number; started_at: string; deadline_at: string; duration_seconds: number; question_count: number; status: string }
 export type EnfaseDesempenho = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number; historico_pct?: number | null; delta?: number | null; delta_rotulo?: string; amostra_historico?: number | null }
 export type StatEnfase = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; enfase: string; amostra: number | null; acerto_pct: number | null; fonte: string; tipo_fonte: string; status: string }
 export type StatEnfaseInput = Omit<StatEnfase, "id">
-export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[] }
+export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[]; classificacao?: Classificacao | null }
 export type Explicacao = {
     correct: boolean; error_type: string; diagnosis: string; mini_lesson: string
     review_recommendation: string
@@ -96,6 +102,8 @@ export const api = {
         if (!res.ok) { const c = await res.json().catch(() => null); throw new Error(c?.detail ?? "Falha ao importar") }
         return res.json() as Promise<Exame>
     },
+    obterRegras: (examId: number) => pedir<RegrasEditalT | null>(`/exames/${examId}/regras`),
+    gravarRegras: (examId: number, r: RegrasEditalT) => pedir<RegrasEditalT>(`/exames/${examId}/regras`, { method: "PUT", body: JSON.stringify(r) }),
     apagarCaderno: (examId: number) => pedir<void>(`/exames/${examId}`, { method: "DELETE" }),
     questoes: (examId: number) => pedir<Questao[]>(`/exames/${examId}/questoes`),
     editarQuestao: (qid: number, dados: PatchQuestao) =>
