@@ -63,6 +63,11 @@ def chamar_chat(
 ) -> tuple[str, dict]:
     """Retorna (conteúdo, usage). `mensagens` no formato OpenAI. Serve texto e
     visão — visão é a mesma rota, com parte `image_url` dentro do content."""
+    if conn.endpoint.startswith("local://"):
+        raise AiCallError(
+            f'"{conn.nome}" é um modelo LOCAL (roda na ambiente de execucao) — a execução do motor local '
+            "ainda não está ligada (vem com o tutor por voz). O cadastro já está salvo."
+        )
     chave = decifrar_ia(conn.api_key_cifrada)
     corpo_req: dict = {
         "model": conn.modelo,
@@ -102,6 +107,8 @@ def chamar_chat(
 
 
 def chamar_embeddings(conn: AiConnection, textos: list[str]) -> tuple[list[list[float]], dict]:
+    if conn.endpoint.startswith("local://"):
+        raise AiCallError(f'"{conn.nome}" é um modelo LOCAL — execução do motor local ainda não ligada.')
     chave = decifrar_ia(conn.api_key_cifrada)
     url = conn.endpoint.rstrip("/") + "/embeddings"
     try:

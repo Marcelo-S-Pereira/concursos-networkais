@@ -348,15 +348,19 @@ function FormPlataforma({
                     placeholder="https://api.together.xyz/v1"
                 />
             </label>
-            <label>
-                API key {inicial && <span className="mant">(em branco = mantém a atual)</span>}
-                <CampoSecreto
-                    valor={f.api_key}
-                    aoMudar={(v) => setF((x) => ({ ...x, api_key: v }))}
-                    placeholder={inicial ? "•••• mantida" : "cole a chave"}
-                    aoRevelar={inicial ? async () => (await api.revelarChave(inicial.id)).api_key : undefined}
-                />
-            </label>
+            {f.endpoint.startsWith("local://") ? (
+                <p className="dica">Plataforma <b>local (ambiente de execucao)</b> — o modelo roda na máquina, não precisa de chave nem endpoint. A execução do motor local (Kokoro/whisper) entra com o tutor por voz.</p>
+            ) : (
+                <label>
+                    API key {inicial && <span className="mant">(em branco = mantém a atual)</span>}
+                    <CampoSecreto
+                        valor={f.api_key}
+                        aoMudar={(v) => setF((x) => ({ ...x, api_key: v }))}
+                        placeholder={inicial ? "•••• mantida" : "cole a chave"}
+                        aoRevelar={inicial ? async () => (await api.revelarChave(inicial.id)).api_key : undefined}
+                    />
+                </label>
+            )}
             {erro && <p className="falha">{erro}</p>}
             <div className="linha-acoes">
                 <button
