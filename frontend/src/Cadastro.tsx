@@ -4,10 +4,15 @@ import { api, type Exame, type Questao } from "./api"
 
 export default function Cadastro() {
     const [exames, setExames] = useState<Exame[] | null>(null)
+    const [lixeira, setLixeira] = useState<Exame[]>([])
     const [abertos, setAbertos] = useState<Set<number>>(new Set())
     const [adicionando, setAdicionando] = useState(false)
+    const [editando, setEditando] = useState<number | null>(null)
 
-    async function recarregar() { setExames(await api.exames()) }
+    async function recarregar() {
+        const [ativos, lix] = await Promise.all([api.exames(), api.lixeiraCadernos().catch(() => [] as Exame[])])
+        setExames(ativos); setLixeira(lix)
+    }
     useEffect(() => { recarregar().catch(() => setExames([])) }, [])
 
     function alternar(id: number) {
@@ -34,11 +39,60 @@ export default function Cadastro() {
                         <strong>{ex.orgao} · {ex.cargo}</strong>
                         <span className="caderno-meta">{ex.banca}{ex.ano ? ` · ${ex.ano}` : ""} · {ex.total} questões</span>
                         {ex.revisar > 0 && <span className="badge">{ex.revisar} p/ revisar</span>}
-                        <button className="link apagar-caderno" onClick={async (e) => { e.stopPropagation(); if (confirm(`Apagar o caderno "${ex.cargo}" e todas as questões?`)) { await api.apagarCaderno(ex.id); await recarregar() } }}>apagar</button>
+                        <span className="caderno-acoes">
+                            <button className="link" onClick={(e) => { e.stopPropagation(); setEditando(editando === ex.id ? null : ex.id) }}>✏ editar dados</button>
+                            <button className="link apagar-caderno" onClick={async (e) => { e.stopPropagation(); if (confirm(`Enviar o caderno "${ex.cargo}" para a lixeira? Ele sai da lista, mas fica guardado e pode ser restaurado.`)) { await api.apagarCaderno(ex.id); await recarregar() } }}>🗑 excluir</button>
+                        </span>
                     </div>
+                    {editando === ex.id && <FormEditarCaderno ex={ex} aoConcluir={async () => { setEditando(null); await recarregar() }} />}
                     {abertos.has(ex.id) && <Lista exameId={ex.id} />}
                 </div>
             ))}
+
+            {lixeira.length > 0 && (
+                <div className="lixeira">
+                    <h3>🗑 Lixeira — na fila de exclusão permanente</h3>
+                    <p className="neutro">Cadernos excluídos ficam guardados na base. Restaure para voltar à lista, ou exclua em definitivo (sem volta).</p>
+                    {lixeira.map((ex) => (
+                        <div key={ex.id} className="caderno-linha excluido">
+                            <div className="caderno-cab">
+                                <strong>{ex.orgao} · {ex.cargo}</strong>
+                                <span className="caderno-meta">{ex.banca}{ex.ano ? ` · ${ex.ano}` : ""} · {ex.total} questões</span>
+                                <span className="caderno-acoes">
+                                    <button className="link" onClick={async () => { await api.restaurarCaderno(ex.id); await recarregar() }}>↺ restaurar</button>
+                                    <button className="link apagar-caderno" onClick={async () => { if (confirm(`Excluir DEFINITIVAMENTE o caderno "${ex.cargo}"? Isso apaga as questões da base e não tem volta.`)) { await api.apagarCadernoPermanente(ex.id); await recarregar() } }}>excluir em definitivo</button>
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
+
+function FormEditarCaderno({ ex, aoConcluir }: { ex: Exame; aoConcluir: () => void }) {
+    const [meta, setMeta] = useState({ banca: ex.banca, orgao: ex.orgao, cargo: ex.cargo, ano: ex.ano ? String(ex.ano) : "" })
+    const [salvando, setSalvando] = useState(false)
+
+    async function salvar() {
+        setSalvando(true)
+        try {
+            await api.editarCaderno(ex.id, { banca: meta.banca, orgao: meta.orgao, cargo: meta.cargo, ano: meta.ano ? Number(meta.ano) : null })
+            aoConcluir()
+        } finally { setSalvando(false) }
+    }
+
+    return (
+        <div className="cartao form-editar-caderno">
+            <h4>Dados mestre do caderno</h4>
+            <div className="grade-estat">
+                <label>Banca<input value={meta.banca} onChange={(e) => setMeta({ ...meta, banca: e.target.value })} placeholder="Cesgranrio" /></label>
+                <label>Órgão<input value={meta.orgao} onChange={(e) => setMeta({ ...meta, orgao: e.target.value })} placeholder="Transpetro" /></label>
+                <label>Cargo/ênfase<input value={meta.cargo} onChange={(e) => setMeta({ ...meta, cargo: e.target.value })} placeholder="Dutos e Terminais" /></label>
+                <label>Ano<input value={meta.ano} onChange={(e) => setMeta({ ...meta, ano: e.target.value })} placeholder="2023" /></label>
+            </div>
+            <button disabled={salvando} onClick={salvar}>{salvando ? "Salvando…" : "Salvar dados"}</button>
         </div>
     )
 }
@@ -203,6 +257,8 @@ function RegrasEdital({ examId, disciplinas }: { examId: number; disciplinas: st
 function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; aoMudar: (q: Questao) => void }) {
     const [enunciado, setEnunciado] = useState(q.enunciado)
     const [enunciadoCol2, setEnunciadoCol2] = useState(q.enunciado_col2)
+    const [pergunta, setPergunta] = useState(q.pergunta ?? "")
+    const [versaoEnun, setVersaoEnun] = useState(0)  // bump força o RichText a remontar (ex.: ao apagar)
     const [alts, setAlts] = useState<Record<string, string>>(Object.fromEntries(q.alternativas.map((a) => [a.letra, a.texto])))
     const [verGabarito, setVerGabarito] = useState(false)
     const [recortando, setRecortando] = useState(false)
@@ -245,7 +301,7 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
 
     async function salvar(extra?: { revisada?: boolean }) {
         setSalvando(true)
-        try { aoMudar(await api.editarQuestao(q.id, { enunciado, enunciado_col2: enunciadoCol2, alternativas: alts, modo_exibicao: modoExib, ...extra })) }
+        try { aoMudar(await api.editarQuestao(q.id, { enunciado, enunciado_col2: enunciadoCol2, pergunta, alternativas: alts, modo_exibicao: modoExib, ...extra })) }
         finally { setSalvando(false) }
     }
 
@@ -311,15 +367,41 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
                 </div>
             )}
 
-            <div className="campo">Enunciado (duas colunas, como na prova)
+            <div className="exib-simulado">
+                <span className="exib-rot">Exibir esta questão no simulado:</span>
+                <div className="exib-botoes">
+                    <button className={modoExib === "texto" ? "on" : ""} onClick={() => setModoExib("texto")}>📝 Texto (2 colunas)</button>
+                    <button className={modoExib === "imagem" ? "on" : ""} onClick={() => setModoExib("imagem")}>🖼 Print do PDF (imagem)</button>
+                </div>
+                <p className="dica">
+                    {modoExib === "texto"
+                        ? "A questão aparece como o texto das duas colunas abaixo — o print do PDF fica de fora."
+                        : "A questão aparece como a imagem recortada do PDF, e não o texto das colunas."}
+                    {modoExib === "imagem" && !q.tem_figura && " ⚠ Antes de salvar, recorte o print: abra “ver texto da página de origem” → Print do PDF."}
+                </p>
+                {modoExib === "imagem" && (enunciado.trim() || enunciadoCol2.trim()) && (
+                    <button className="secundario" onClick={() => {
+                        if (confirm("Apagar o texto do enunciado (as duas colunas)? No simulado a questão vai usar só o print.")) {
+                            setEnunciado(""); setEnunciadoCol2(""); setVersaoEnun((v) => v + 1)
+                        }
+                    }}>🗑 Apagar o texto do enunciado</button>
+                )}
+                <span className="exib-aviso">Depois de escolher, clique em <b>Salvar</b> para valer no simulado.</span>
+            </div>
+
+            <div className="campo">Enunciado da questão (a pergunta) — sempre editável
+                <RichText key={`p-${versaoEnun}`} valor={pergunta} aoMudar={setPergunta} minRows={2} />
+            </div>
+
+            <div className="campo">Texto de apoio (2 colunas, como na prova — opcional)
                 <div className="enunciado-2col">
                     <div className="col">
                         <span className="col-rot">Coluna esquerda</span>
-                        <RichText valor={enunciado} aoMudar={setEnunciado} minRows={4} />
+                        <RichText key={`e1-${versaoEnun}`} valor={enunciado} aoMudar={setEnunciado} minRows={4} />
                     </div>
                     <div className="col">
                         <span className="col-rot">Coluna direita</span>
-                        <RichText valor={enunciadoCol2} aoMudar={setEnunciadoCol2} minRows={4} />
+                        <RichText key={`e2-${versaoEnun}`} valor={enunciadoCol2} aoMudar={setEnunciadoCol2} minRows={4} />
                     </div>
                 </div>
             </div>
@@ -333,12 +415,6 @@ function CartaoCadastro({ examId, q, aoMudar }: { examId: number; q: Questao; ao
             </div>
 
             {erroIA && <p className="falha">{erroIA}</p>}
-            <div className="exib-simulado">
-                No simulado, mostrar:
-                <button className={modoExib === "texto" ? "on" : ""} onClick={() => setModoExib("texto")}>Texto</button>
-                <button className={modoExib === "imagem" ? "on" : ""} onClick={() => setModoExib("imagem")}>Print da questão</button>
-                {modoExib === "imagem" && !q.tem_figura && <span className="dica">⚠ recorte o print da questão abaixo antes de salvar.</span>}
-            </div>
             <div className="acoes">
                 <button disabled={transcrevendo} className="ia" onClick={corrigirComIA} title="Transcreve esta questão com a IA cadastrada (revise antes de salvar)">
                     {transcrevendo ? "IA transcrevendo…" : "✨ Corrigir com IA"}

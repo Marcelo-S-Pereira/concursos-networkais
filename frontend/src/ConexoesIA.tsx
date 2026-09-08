@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { api, type ConexaoIA, type ConexaoInput, type Plataforma, type PlataformaInput } from "./api"
+import { api, type ConexaoIA, type ConexaoInput, type Plataforma, type PlataformaInput, type UsoConexao, type UsoResumo } from "./api"
 import CampoSecreto from "./CampoSecreto"
 
 // As 5 categorias, separadas: LLM, VLM, STT, TTS + Embeddings (RAG).
@@ -15,21 +15,132 @@ const CATEGORIAS: { chave: string; rotulo: string; dica: string }[] = [
 
 const OUTRO = "__outro__"
 
+function fmtTempo(seg: number): string {
+    if (!seg) return "—"
+    if (seg < 60) return `${seg.toFixed(seg < 10 ? 1 : 0)} s`
+    if (seg < 3600) return `${(seg / 60).toFixed(1)} min`
+    return `${(seg / 3600).toFixed(2)} h`
+}
+// valores em dinheiro: 2 casas, sempre
+function fmtMoeda(v: number, simbolo: string): string {
+    return `${simbolo} ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+// preço unitário: 2 casas, mas mantém sub-centavo legível (0,0015 em vez de 0,00)
+function fmtPreco(v: number, simbolo: string): string {
+    const casas = v !== 0 && Math.abs(v) < 0.01 ? 4 : 2
+    return `${simbolo} ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: casas })}`
+}
+const br = (n: number) => n.toLocaleString("pt-BR")
+const par = (usd: number | null, brl: number | null) =>
+    usd == null || brl == null ? "—" : `${fmtMoeda(brl, "R$")} · ${fmtMoeda(usd, "US$")}`
+
+// Estatística completa por modelo, derivada da API + do registro de uso.
+function PainelUso({ uso, cotacao, atualizar }: { uso?: UsoConexao; cotacao: Cotacao; atualizar: () => Promise<void> }) {
+    const [atualizando, setAtualizando] = useState(false)
+    async function clicar() {
+        setAtualizando(true)
+        try { await atualizar() } finally { setAtualizando(false) }
+    }
+
+    const semUso = !uso || uso.requisicoes === 0
+    const unidades = Object.entries(uso?.unidades ?? {})
+    const taxa = cotacao?.taxa ?? null
+    return (
+        <div className="uso-painel">
+            <div className="uso-cab">
+                <strong>Estatística de uso</strong>
+                <button className="link uso-atualizar" onClick={clicar} disabled={atualizando}>
+                    {atualizando ? "atualizando…" : "↻ atualizar"}
+                </button>
+            </div>
+
+            {semUso ? (
+                <p className="vazio-uso">Sem uso registrado ainda — as estatísticas aparecem assim que este modelo for chamado.</p>
+            ) : (
+                <>
+                    <div className="uso-grade">
+                        <div className="uso-item"><span className="uso-num">{br(uso!.requisicoes)}</span><span className="uso-rot">requisições</span></div>
+                        <div className={`uso-item ${uso!.erros > 0 ? "ruim" : ""}`}><span className="uso-num">{br(uso!.erros)}</span><span className="uso-rot">erros da API</span></div>
+                        <div className="uso-item"><span className="uso-num">{fmtTempo(uso!.segundos_uso)}</span><span className="uso-rot">tempo de uso</span></div>
+                        <div className="uso-item"><span className="uso-num">{br(uso!.prompt_tokens)}</span><span className="uso-rot">tokens entrada</span></div>
+                        <div className="uso-item"><span className="uso-num">{br(uso!.completion_tokens)}</span><span className="uso-rot">tokens saída</span></div>
+                        <div className="uso-item"><span className="uso-num">{br(uso!.total_tokens)}</span><span className="uso-rot">tokens total</span></div>
+                    </div>
+
+                    <div className="uso-item destaque custo-total">
+                        <span className="uso-num">{par(uso!.custo_usd, uso!.custo_brl)}</span>
+                        <span className="uso-rot">custo total acumulado (R$ · US$)</span>
+                    </div>
+
+                    <div className="uso-proj">
+                        <span className="uso-proj-rot">Projeção de gasto — mantido este ritmo de uso (R$ · US$):</span>
+                        <div className="uso-grade">
+                            <div className="uso-item"><span className="uso-num">{par(uso!.gasto_min_usd, uso!.gasto_min_brl)}</span><span className="uso-rot">por minuto</span></div>
+                            <div className="uso-item"><span className="uso-num">{par(uso!.gasto_hora_usd, uso!.gasto_hora_brl)}</span><span className="uso-rot">por hora</span></div>
+                            <div className="uso-item"><span className="uso-num">{par(uso!.gasto_dia_usd, uso!.gasto_dia_brl)}</span><span className="uso-rot">por dia</span></div>
+                            <div className="uso-item"><span className="uso-num">{par(uso!.gasto_mes_usd, uso!.gasto_mes_brl)}</span><span className="uso-rot">por mês</span></div>
+                        </div>
+                    </div>
+
+                    {unidades.length > 0 && (
+                        <p className="uso-detalhe">{unidades.map(([k, v]) => `${br(v)} ${k}`).join(" · ")}</p>
+                    )}
+                </>
+            )}
+
+            {uso?.tem_preco && uso.preco ? (
+                <p className="uso-aviso">
+                    Preço da API (por 1M tokens): entrada {fmtPreco(uso.preco.input, "US$")}{taxa ? ` (${fmtPreco(uso.preco.input * taxa, "R$")})` : ""}
+                    {" · "}saída {fmtPreco(uso.preco.output, "US$")}{taxa ? ` (${fmtPreco(uso.preco.output * taxa, "R$")})` : ""}
+                    {uso.preco.por_minuto ? ` · ${fmtPreco(uso.preco.por_minuto, "US$")}${taxa ? ` (${fmtPreco(uso.preco.por_minuto * taxa, "R$")})` : ""}/min` : ""}
+                    {cotacao ? ` — câmbio US$ 1 = ${fmtPreco(cotacao.taxa, "R$")} (${cotacao.fonte})` : ""}
+                </p>
+            ) : (
+                <p className="uso-aviso">A API do provedor não informou preço para este modelo — custo indisponível.</p>
+            )}
+
+            {uso && uso.ultimos_erros.length > 0 && (
+                <details className="uso-erros">
+                    <summary>{br(uso.erros)} erro(s) da API — ver os últimos</summary>
+                    <ul>
+                        {uso.ultimos_erros.map((e, i) => (
+                            <li key={`${e.quando ?? ""}-${i}`}>
+                                <span className="uso-erro-quando">{e.quando ? new Date(e.quando).toLocaleString("pt-BR") : ""}</span>
+                                <span className="uso-erro-origem">{e.origem}</span>
+                                <span className="uso-erro-msg">{e.erro}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </details>
+            )}
+        </div>
+    )
+}
+
 
 export default function ConexoesIA() {
     const [plataformas, setPlataformas] = useState<Plataforma[] | null>(null)
     const [modelos, setModelos] = useState<ConexaoIA[]>([])
+    const [uso, setUso] = useState<UsoResumo | null>(null)
     const [adicionandoPlat, setAdicionandoPlat] = useState(false)
     const [erro, setErro] = useState<string | null>(null)
 
     async function recarregar() {
         try {
-            const [p, m] = await Promise.all([api.plataformas(), api.conexoesIA()])
+            const [p, m, u] = await Promise.all([
+                api.plataformas(), api.conexoesIA(),
+                api.usoConexoes().catch(() => null),
+            ])
             setPlataformas(p)
             setModelos(m)
+            setUso(u)
         } catch (e) {
             setErro(e instanceof Error ? e.message : "Erro ao carregar")
         }
+    }
+
+    async function atualizarUso() {
+        setUso(await api.usoConexoes().catch(() => null))
     }
 
     useEffect(() => {
@@ -38,6 +149,8 @@ export default function ConexoesIA() {
 
     if (erro) return <p className="falha">{erro}</p>
     if (!plataformas) return <p className="vazio">Carregando…</p>
+
+    const usoPorConexao = new Map<number, UsoConexao>((uso?.por_conexao ?? []).map((x) => [x.connection_id, x]))
 
     return (
         <div className="conexoes-ia">
@@ -76,6 +189,9 @@ export default function ConexoesIA() {
                     key={p.id}
                     plataforma={p}
                     modelos={modelos.filter((m) => m.platform_id === p.id)}
+                    usoPorConexao={usoPorConexao}
+                    cotacao={uso ? { taxa: uso.cotacao_usd_brl, fonte: uso.fonte_cotacao } : null}
+                    atualizarUso={atualizarUso}
                     recarregar={recarregar}
                 />
             ))}
@@ -83,11 +199,16 @@ export default function ConexoesIA() {
     )
 }
 
+type Cotacao = { taxa: number; fonte: string } | null
+
 function CardPlataforma({
-    plataforma, modelos, recarregar,
+    plataforma, modelos, usoPorConexao, cotacao, atualizarUso, recarregar,
 }: {
     plataforma: Plataforma
     modelos: ConexaoIA[]
+    usoPorConexao: Map<number, UsoConexao>
+    cotacao: Cotacao
+    atualizarUso: () => Promise<void>
     recarregar: () => Promise<void>
 }) {
     const [aberto, setAberto] = useState(true)
@@ -148,6 +269,9 @@ function CardPlataforma({
                                 categoria={cat}
                                 plataforma={plataforma}
                                 modelos={modelos.filter((m) => m.categoria === cat.chave)}
+                                usoPorConexao={usoPorConexao}
+                                cotacao={cotacao}
+                                atualizarUso={atualizarUso}
                                 recarregar={recarregar}
                             />
                         ))}
@@ -176,11 +300,14 @@ function SincronizarModelos({ plataforma }: { plataforma: Plataforma }) {
 }
 
 function SecaoCategoria({
-    categoria, plataforma, modelos, recarregar,
+    categoria, plataforma, modelos, usoPorConexao, cotacao, atualizarUso, recarregar,
 }: {
     categoria: { chave: string; rotulo: string; dica: string }
     plataforma: Plataforma
     modelos: ConexaoIA[]
+    usoPorConexao: Map<number, UsoConexao>
+    cotacao: Cotacao
+    atualizarUso: () => Promise<void>
     recarregar: () => Promise<void>
 }) {
     const [adicionando, setAdicionando] = useState(false)
@@ -197,7 +324,7 @@ function SecaoCategoria({
             </header>
 
             {modelos.map((m) => (
-                <CardModelo key={m.id} modelo={m} plataforma={plataforma} recarregar={recarregar} />
+                <CardModelo key={m.id} modelo={m} plataforma={plataforma} uso={usoPorConexao.get(m.id)} cotacao={cotacao} atualizarUso={atualizarUso} recarregar={recarregar} />
             ))}
 
             {adicionando && (
@@ -221,14 +348,23 @@ function SecaoCategoria({
 }
 
 function CardModelo({
-    modelo, plataforma, recarregar,
+    modelo, plataforma, uso, cotacao, atualizarUso, recarregar,
 }: {
     modelo: ConexaoIA
     plataforma: Plataforma
+    uso?: UsoConexao
+    cotacao: Cotacao
+    atualizarUso: () => Promise<void>
     recarregar: () => Promise<void>
 }) {
     const [aberto, setAberto] = useState(false)
     const [teste, setTeste] = useState<string | null>(null)
+
+    // ao abrir o card, atualiza o uso — a estatística reflete o estado atual
+    useEffect(() => {
+        if (aberto) void atualizarUso()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [aberto])
 
     async function testar() {
         setTeste("testando…")
@@ -250,10 +386,13 @@ function CardModelo({
                 ) : (
                     <span className="tag-fb">{modelo.ordem_fallback ? `fallback ${modelo.ordem_fallback}` : "—"}</span>
                 )}
+                {uso && uso.requisicoes > 0 && <span className="tag-uso">{uso.requisicoes} req</span>}
+                {uso && uso.erros > 0 && <span className="tag-erros">{uso.erros} erro(s)</span>}
             </div>
 
             {aberto && (
                 <div className="modelo-corpo">
+                    <PainelUso uso={uso} cotacao={cotacao} atualizar={atualizarUso} />
                     <FormModelo
                         plataforma={plataforma}
                         categoria={modelo.categoria}
@@ -419,7 +558,7 @@ function FormModelo({
     const [salvando, setSalvando] = useState(false)
     const [erro, setErro] = useState<string | null>(null)
 
-    function up(campo: keyof ConexaoInput, valor: string | number) {
+    function up(campo: keyof ConexaoInput, valor: string | number | null) {
         setF((x) => ({ ...x, [campo]: valor }))
     }
 

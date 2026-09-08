@@ -11,26 +11,47 @@ function rotuloMastery(m: string) { return MASTERY_ROTULO[m] ?? m.toLowerCase() 
 
 export default function Caderno({ modo }: { modo: "celular" | "computador" }) {
     const [exames, setExames] = useState<Exame[] | null>(null)
-    const [exameId, setExameId] = useState<number | null>(null)
+    const [abertos, setAbertos] = useState<Set<number>>(new Set())
+    const [jaAbertos, setJaAbertos] = useState<Set<number>>(new Set())  // já montados (mantém o estado do simulado ao recolher)
 
     useEffect(() => {
-        api.exames().then((e) => { setExames(e); if (e.length) setExameId(e[0].id) }).catch(() => setExames([]))
+        api.exames().then((e) => {
+            setExames(e)
+            if (e.length) { setAbertos(new Set([e[0].id])); setJaAbertos(new Set([e[0].id])) }
+        }).catch(() => setExames([]))
     }, [])
+
+    function alternar(id: number) {
+        setAbertos((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+        setJaAbertos((s) => new Set(s).add(id))
+    }
 
     if (!exames) return <p className="neutro">Carregando…</p>
     if (!exames.length) return <p className="neutro">Nenhuma prova disponível ainda.</p>
     return (
         <div>
-            <div className="seletor-exame">
-                {exames.map((e) => (
-                    <button key={e.id} className={e.id === exameId ? "ativa" : ""} onClick={() => setExameId(e.id)}>
-                        {e.orgao} · {e.cargo}
-                    </button>
-                ))}
-            </div>
-            {exameId && <Simulado key={exameId} exameId={exameId} modo={modo} />}
+            {exames.map((ex) => (
+                <div key={ex.id} className={`caderno-linha ${abertos.has(ex.id) ? "aberto" : ""}`}>
+                    <div className="caderno-cab" onClick={() => alternar(ex.id)}>
+                        <span className="seta">{abertos.has(ex.id) ? "▾" : "▸"}</span>
+                        <strong>{ex.orgao} · {ex.cargo}</strong>
+                        <span className="caderno-meta">{ex.banca}{ex.ano ? ` · ${ex.ano}` : ""} · {ex.total} questões</span>
+                    </div>
+                    {jaAbertos.has(ex.id) && (
+                        <div hidden={!abertos.has(ex.id)} className="caderno-corpo-sim">
+                            <Simulado exameId={ex.id} modo={modo} />
+                        </div>
+                    )}
+                </div>
+            ))}
         </div>
     )
+}
+
+function fmtSeg(s: number): string {
+    if (s < 60) return `${s}s`
+    const m = Math.floor(s / 60), r = s % 60
+    return r ? `${m}min ${r}s` : `${m}min`
 }
 
 function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "computador" }) {
@@ -47,6 +68,9 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
     const [run, setRun] = useState<SimRun | null>(null)
     const [restante, setRestante] = useState<number>(0)
     const [minutos, setMinutos] = useState(240)
+    // medição de tempo por questão (proxy: 1ª marcação de cada questão, em refs p/ não re-renderizar)
+    const inicioRef = useRef<number>(Date.now())
+    const marcadoEm = useRef<Record<number, number>>({})
 
     useEffect(() => {
         api.questoes(exameId).then((d) => setQs(d.filter((q) => !q.descartada))).catch(() => setQs([]))
@@ -69,7 +93,16 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
 
     function marcar(qid: number, letra: string, fora: boolean) {
         if (fora) { setForaDoCampo((f) => ({ ...f, [qid]: true })); return }
+        if (!marcadoEm.current[qid]) marcadoEm.current[qid] = Date.now()  // 1ª marcação
         setMarcadas((m) => { const a = new Set(m[qid] ?? []); a.add(letra); return { ...m, [qid]: a } })
+    }
+    function calcularTempos(): Record<number, number> {
+        // tempo por questão ≈ intervalo até a 1ª marcação, na ordem em que foram respondidas
+        const entradas = Object.entries(marcadoEm.current).map(([qid, t]) => ({ qid: Number(qid), t })).sort((a, b) => a.t - b.t)
+        const tempos: Record<number, number> = {}
+        let prev = inicioRef.current
+        for (const { qid, t } of entradas) { tempos[qid] = Math.max(1, Math.round((t - prev) / 1000)); prev = t }
+        return tempos
     }
     function limpar(qid: number) {
         setMarcadas((m) => { const c = { ...m }; delete c[qid]; return c })
@@ -90,12 +123,14 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
         const r = await api.iniciarSimulado(exameId, minutos * 60)
         setRun(r)
         setMarcadas({}); setForaDoCampo({}); setResultado(null)
+        inicioRef.current = Date.now(); marcadoEm.current = {}  // zera o relógio das questões
     }
 
     async function entregar() {
         const respostas = respostasValidas()
-        if (run) setResultado(await api.entregarSimulado(run.simulation_id, respostas))
-        else setResultado(await api.corrigir(exameId, respostas))
+        const tempos = calcularTempos()
+        if (run) setResultado(await api.entregarSimulado(run.simulation_id, respostas, tempos))
+        else setResultado(await api.corrigir(exameId, respostas, tempos))
     }
 
     const anuladas = qs.filter((q) => (marcadas[q.id]?.size ?? 0) > 1 || foraDoCampo[q.id]).length
@@ -118,14 +153,17 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                             <img className="figura questao-img" src={api.figuraUrl(q.id)} alt={`questão ${q.numero}`} />
                         ) : (
                             <>
-                                {q.enunciado_col2 && q.enunciado_col2.trim() ? (
-                                    <div className="enun-2col">
-                                        <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
-                                        <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado_col2) }} />
-                                    </div>
-                                ) : (
-                                    <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                                {(q.enunciado.trim() || (q.enunciado_col2 && q.enunciado_col2.trim())) && (
+                                    q.enunciado_col2 && q.enunciado_col2.trim() ? (
+                                        <div className="enun-2col">
+                                            <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                                            <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado_col2) }} />
+                                        </div>
+                                    ) : (
+                                        <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                                    )
                                 )}
+                                {q.pergunta && q.pergunta.trim() && <div className="pergunta" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.pergunta) }} />}
                                 {q.tem_figura && <img className="figura" src={api.figuraUrl(q.id)} alt="figura" />}
                                 <ol className="alts-prova">
                                     {q.alternativas.map((a) => (
@@ -231,6 +269,23 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                                         )}
                                     </div>
                                 ))}
+                            </div>
+                        )}
+                        {"tempo_por_enfase" in resultado && resultado.tempo_por_enfase && resultado.tempo_por_enfase.length > 0 && (
+                            <div className="desempenho">
+                                <h4>Tempo por ênfase{resultado.tempo_alvo_s ? ` · alvo ~${fmtSeg(resultado.tempo_alvo_s)}/questão` : ""}</h4>
+                                {resultado.tempo_por_enfase.map((t) => (
+                                    <div key={t.enfase} className="linha-tempo">
+                                        <span className="enf-nome">{t.enfase}</span>
+                                        <span className="enf-tempo">mediana {fmtSeg(t.mediana_s)} · média {fmtSeg(t.media_s)} · P75 {fmtSeg(t.p75_s)}</span>
+                                        {resultado.tempo_alvo_s != null && (
+                                            <span className={`delta ${t.mediana_s > resultado.tempo_alvo_s ? "lento" : "ok"}`}>
+                                                {t.mediana_s > resultado.tempo_alvo_s ? "acima do alvo" : "no alvo"}
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
+                                <p className="dica">Tempo aproximado (intervalo entre marcações).</p>
                             </div>
                         )}
                         {"classificacao" in resultado && resultado.classificacao && (

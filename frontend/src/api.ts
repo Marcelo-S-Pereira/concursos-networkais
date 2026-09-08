@@ -49,11 +49,36 @@ export type DadosCadastro = { nome: string; email: string; cpf: string; telefone
 export type Choice = { letra: string; texto: string }
 export type Questao = {
     id: number; numero: number; pagina: number; disciplina: string; enunciado: string
-    enunciado_col2: string; gabarito: string | null; tem_figura: boolean; modo_exibicao: string; confianca: number; aviso: string
+    enunciado_col2: string; pergunta: string; gabarito: string | null; tem_figura: boolean; modo_exibicao: string; confianca: number; aviso: string
     revisada: boolean; descartada: boolean; alternativas: Choice[]
 }
-export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number }
-export type ResultadoSimulado = { total: number; respondidas: number; acertos: number; percentual_bruto: number; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[] }
+export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number; excluido_em?: string | null }
+export type TempoEnfase = { enfase: string; amostra: number; mediana_s: number; media_s: number; p75_s: number }
+export type MasteryEnfase = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number }
+export type DificuldadeEnfase = { enfase: string; tentativas: number; erros: number; erro_pct: number; dificuldade: string }
+export type Gamificacao = { xp: number; nivel: number; xp_no_nivel: number; xp_para_proximo: number; acertos: number; simulados: number; revisoes: number; streak_dias: number }
+export type DesempenhoResumo = {
+    mastery: MasteryEnfase[]
+    dificuldade: DificuldadeEnfase[]
+    macete: { com_macete: number; revisoes_avaliadas: number; acerto_pos_macete_pct: number | null; observacao: string }
+    gamificacao: Gamificacao
+}
+export type AdminOverview = { usuarios: number; simulados_feitos: number; cadernos: number; questoes: number }
+export type UsuarioAdmin = { id: number; nome: string; email: string; role: string; saldo: number; vitalicio: boolean }
+export type CreditosResumo = {
+    saldo: number; total_ganho: number; total_gasto: number
+    extrato: { delta: number; tipo: string; descricao: string; quando: string | null }[]
+    acesso_livre: boolean
+}
+export type PlataformaPagamento = { id: number; titulo: string; provedor: string; public_key: string; ativa: boolean; token_mascarado: string }
+export type PlataformaPagamentoInput = { titulo: string; provedor: string; access_token: string; public_key: string }
+export type ConfigPagamento = { preco_reais: number; creditos_por_compra: number; creditos_por_simulado: number }
+export type SaudeVPS = {
+    cpus: number; load_1min: number; load_por_cpu: number
+    memoria_pct: number | null; disco_pct: number | null; conexoes_db: number | null
+    status: "ok" | "atencao" | "critico"; motivos: string[]; cadastros_bloqueados: boolean
+}
+export type ResultadoSimulado = { total: number; respondidas: number; acertos: number; percentual_bruto: number; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[]; tempo_por_enfase?: TempoEnfase[]; tempo_alvo_s?: number | null }
 export type Classificacao = {
     nota_ponderada: number; nota_corte: number | null; vagas: number | null
     eliminado: boolean; motivos: string[]
@@ -68,9 +93,11 @@ export type Classificacao = {
 export type RegrasEditalT = { pesos: Record<string, number>; minimos: Record<string, number>; nota_corte: number | null; vagas: number | null; total_inscritos?: number | null; fases?: Record<string, string>; minimo_pct_fase?: Record<string, number>; materias_sem_zero?: string[] }
 export type SimRun = { simulation_id: number; started_at: string; deadline_at: string; duration_seconds: number; question_count: number; status: string }
 export type EnfaseDesempenho = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number; historico_pct?: number | null; delta?: number | null; delta_rotulo?: string; amostra_historico?: number | null }
-export type StatEnfase = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; enfase: string; amostra: number | null; acerto_pct: number | null; fonte: string; tipo_fonte: string; status: string }
+export type StatEnfase = { id: number; exam_id: number | null; disciplina: string; banca: string; orgao: string; cargo: string; ano: number | null; enfase: string; amostra: number | null; acerto_pct: number | null; fonte: string; tipo_fonte: string; status: string }
 export type StatEnfaseInput = Omit<StatEnfase, "id">
-export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[]; classificacao?: Classificacao | null }
+export type TemaComStat = { id: number; nome: string; stat: StatEnfase | null }
+export type EstruturaEstat = { exam_id: number; cargo: string; disciplinas: { disciplina: string; temas: TemaComStat[] }[] }
+export type SimResultado = { acertos: number; total: number; respondidas: number; em_branco: number; percentual_bruto: number; encerrado_no_prazo: boolean; resultado: Record<number, boolean>; por_enfase: EnfaseDesempenho[]; classificacao?: Classificacao | null; tempo_por_enfase?: TempoEnfase[]; tempo_alvo_s?: number | null }
 export type GemeaT = { id: number; enunciado: string; alternativas: Record<string, string> }
 export type Explicacao = {
     correct: boolean; error_type: string; diagnosis: string; mini_lesson: string
@@ -98,9 +125,27 @@ export type ConexaoInput = {
     preco_entrada_por_milhao?: number | null; preco_saida_por_milhao?: number | null
     moeda?: string
 }
+export type UsoConexao = {
+    connection_id: number
+    requisicoes: number; erros: number
+    prompt_tokens: number; completion_tokens: number; total_tokens: number
+    segundos_uso: number; horas_uso: number
+    unidades: Record<string, number>
+    tem_preco: boolean
+    preco: { input: number; output: number; por_minuto: number | null; moeda: string } | null
+    custo_usd: number | null; custo_brl: number | null
+    gasto_min_usd: number | null; gasto_min_brl: number | null
+    gasto_hora_usd: number | null; gasto_hora_brl: number | null
+    gasto_dia_usd: number | null; gasto_dia_brl: number | null
+    gasto_mes_usd: number | null; gasto_mes_brl: number | null
+    ultimos_erros: { quando: string | null; origem: string; erro: string | null }[]
+}
+export type UsoResumo = {
+    cotacao_usd_brl: number; fonte_cotacao: string; por_conexao: UsoConexao[]
+}
 export type PatchQuestao = Partial<{
     enunciado: string; gabarito: string; disciplina: string
-    alternativas: Record<string, string>; revisada: boolean; descartada: boolean; modo_exibicao: string; enunciado_col2: string
+    alternativas: Record<string, string>; revisada: boolean; descartada: boolean; modo_exibicao: string; enunciado_col2: string; pergunta: string
 }>
 
 export const api = {
@@ -113,7 +158,12 @@ export const api = {
     obterRegras: (examId: number) => pedir<RegrasEditalT | null>(`/exames/${examId}/regras`),
     aferirLLM: (examId: number) => pedir<{ similaridade_pct: number; cenarios: number; checagens: number; veredito: string }>(`/exames/${examId}/aferir-llm`, { method: "POST" }),
     gravarRegras: (examId: number, r: RegrasEditalT) => pedir<RegrasEditalT>(`/exames/${examId}/regras`, { method: "PUT", body: JSON.stringify(r) }),
+    editarCaderno: (examId: number, dados: { banca?: string; orgao?: string; cargo?: string; ano?: number | null }) =>
+        pedir<Exame>(`/exames/${examId}`, { method: "PATCH", body: JSON.stringify(dados) }),
     apagarCaderno: (examId: number) => pedir<void>(`/exames/${examId}`, { method: "DELETE" }),
+    lixeiraCadernos: () => pedir<Exame[]>("/exames/lixeira"),
+    restaurarCaderno: (examId: number) => pedir<Exame>(`/exames/${examId}/restaurar`, { method: "POST" }),
+    apagarCadernoPermanente: (examId: number) => pedir<void>(`/exames/${examId}/permanente`, { method: "DELETE" }),
     questoes: (examId: number) => pedir<Questao[]>(`/exames/${examId}/questoes`),
     editarQuestao: (qid: number, dados: PatchQuestao) =>
         pedir<Questao>(`/exames/questoes/${qid}`, { method: "PATCH", body: JSON.stringify(dados) }),
@@ -138,16 +188,42 @@ export const api = {
         pedir<Explicacao>(`/exames/questoes/${qid}/explicar`, { method: "POST", body: JSON.stringify({ student_answer }) }),
     transcreverIA: (qid: number) => pedir<{ enunciado: string; alternativas: Record<string, string> }>(`/exames/questoes/${qid}/transcrever`, { method: "POST" }),
     restaurarFigura: (qid: number) => pedir<{ ok: boolean }>(`/exames/questoes/${qid}/figura/restaurar`, { method: "POST" }),
-    corrigir: (examId: number, respostas: Record<number, string>) =>
-        pedir<ResultadoSimulado>(`/exames/${examId}/corrigir`, { method: "POST", body: JSON.stringify({ respostas }) }),
-    estatEnfase: () => pedir<StatEnfase[]>("/estatisticas/enfase"),
-    criarEstat: (d: StatEnfaseInput) => pedir<StatEnfase>("/estatisticas/enfase", { method: "POST", body: JSON.stringify(d) }),
-    editarEstat: (id: number, d: StatEnfaseInput) => pedir<StatEnfase>(`/estatisticas/enfase/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    corrigir: (examId: number, respostas: Record<number, string>, tempos?: Record<number, number>) =>
+        pedir<ResultadoSimulado>(`/exames/${examId}/corrigir`, { method: "POST", body: JSON.stringify({ respostas, tempos }) }),
+    desempenho: () => pedir<DesempenhoResumo>("/desempenho"),
+    adminOverview: () => pedir<AdminOverview>("/admin/overview"),
+    adminUsuarios: () => pedir<UsuarioAdmin[]>("/admin/usuarios"),
+    adminVitalicio: (email: string, vitalicio: boolean) =>
+        pedir<{ email: string; vitalicio: boolean }>("/admin/vitalicio", { method: "POST", body: JSON.stringify({ email, vitalicio }) }),
+    campanhaPrevia: (alvo: string, limite: number) =>
+        pedir<{ quantos: number; exemplos: string[] }>(`/admin/campanha/previa?alvo=${alvo}&limite=${limite}`),
+    aplicarCampanha: (alvo: string, quantidade: number, motivo: string, limite: number) =>
+        pedir<{ beneficiados: number }>("/admin/campanha", { method: "POST", body: JSON.stringify({ alvo, quantidade, motivo, limite }) }),
+    meusCreditos: () => pedir<CreditosResumo>("/creditos"),
+    adminCreditar: (email: string, creditos: number, motivo: string) =>
+        pedir<{ ok: boolean; saldo: number }>("/admin/creditar", { method: "POST", body: JSON.stringify({ email, creditos, motivo }) }),
+    pagPlataformas: () => pedir<PlataformaPagamento[]>("/pagamentos"),
+    criarPagPlataforma: (d: PlataformaPagamentoInput) => pedir<PlataformaPagamento>("/pagamentos", { method: "POST", body: JSON.stringify(d) }),
+    editarPagPlataforma: (id: number, d: PlataformaPagamentoInput) => pedir<PlataformaPagamento>(`/pagamentos/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    apagarPagPlataforma: (id: number) => pedir<void>(`/pagamentos/${id}`, { method: "DELETE" }),
+    ativarPagPlataforma: (id: number) => pedir<PlataformaPagamento[]>(`/pagamentos/${id}/ativar`, { method: "POST" }),
+    revelarPagToken: (id: number) => pedir<{ access_token: string }>(`/pagamentos/${id}/revelar`),
+    testarPagPlataforma: (id: number) => pedir<{ ok: boolean | null; mensagem: string }>(`/pagamentos/${id}/testar`, { method: "POST" }),
+    pagConfig: () => pedir<ConfigPagamento>("/pagamentos/config"),
+    salvarPagConfig: (d: ConfigPagamento) => pedir<ConfigPagamento>("/pagamentos/config", { method: "PUT", body: JSON.stringify(d) }),
+    adminSaude: () => pedir<SaudeVPS>("/admin/saude"),
+    adminBloquearCadastros: (bloqueado: boolean) =>
+        pedir<{ cadastros_bloqueados: boolean }>("/admin/cadastros", { method: "POST", body: JSON.stringify({ bloqueado }) }),
+    estatEstrutura: (examId: number) => pedir<EstruturaEstat>(`/estatisticas/enfase/estrutura?exam_id=${examId}`),
+    estatExtrairTemas: (examId: number) => pedir<{ criados: number; disciplinas: string[] }>(`/estatisticas/enfase/temas/extrair?exam_id=${examId}`, { method: "POST" }),
+    estatAddTema: (examId: number, disciplina: string, nome: string) => pedir<{ id: number; disciplina: string; nome: string }>("/estatisticas/enfase/temas", { method: "POST", body: JSON.stringify({ exam_id: examId, disciplina, nome }) }),
+    estatDelTema: (id: number) => pedir<void>(`/estatisticas/enfase/temas/${id}`, { method: "DELETE" }),
+    upsertEstatTema: (d: StatEnfaseInput) => pedir<StatEnfase>("/estatisticas/enfase/por-tema", { method: "PUT", body: JSON.stringify(d) }),
     apagarEstat: (id: number) => pedir<void>(`/estatisticas/enfase/${id}`, { method: "DELETE" }),
     iniciarSimulado: (examId: number, duration_seconds: number) =>
         pedir<SimRun>(`/simulado/iniciar`, { method: "POST", body: JSON.stringify({ exam_id: examId, duration_seconds }) }),
-    entregarSimulado: (runId: number, respostas: Record<number, string>) =>
-        pedir<SimResultado>(`/simulado/${runId}/entregar`, { method: "POST", body: JSON.stringify({ respostas }) }),
+    entregarSimulado: (runId: number, respostas: Record<number, string>, tempos?: Record<number, number>) =>
+        pedir<SimResultado>(`/simulado/${runId}/entregar`, { method: "POST", body: JSON.stringify({ respostas, tempos }) }),
 
     ragDocs: () => pedir<RagDoc[]>("/rag/documentos"),
     ragImportar: async (fd: FormData) => {
@@ -158,11 +234,13 @@ export const api = {
     ragReindexar: (id: number) => pedir<RagDoc>(`/rag/documentos/${id}/reindexar`, { method: "POST" }),
     ragApagar: (id: number) => pedir<void>(`/rag/documentos/${id}`, { method: "DELETE" }),
     ragBuscar: (consulta: string) => pedir<{ resultados: { titulo: string; chunk: number; conteudo: string }[] }>("/rag/buscar", { method: "POST", body: JSON.stringify({ consulta }) }),
+    ragPerguntar: (pergunta: string) => pedir<{ resposta: string; trechos: { titulo: string; chunk: number; conteudo: string }[] }>("/rag/perguntar", { method: "POST", body: JSON.stringify({ pergunta }) }),
     catalogoPlataformas: () => pedir<{ nome: string; endpoint: string }[]>("/ai/catalogo/plataformas"),
     catalogoModelos: (plataforma: string, categoria: string) =>
         pedir<{ id: number; model_id: string; rotulo: string; dim: number | null; padrao: boolean }[]>(`/ai/catalogo/modelos?plataforma=${encodeURIComponent(plataforma)}&categoria=${categoria}`),
     sincronizarCatalogo: (platformId: number) => pedir<{ plataforma: string; modelos_no_provedor: number; novos_no_catalogo: number }>(`/ai/catalogo/sincronizar/${platformId}`, { method: "POST" }),
     conexoesIA: () => pedir<ConexaoIA[]>("/ai/conexoes"),
+    usoConexoes: () => pedir<UsoResumo>("/ai/conexoes/uso"),
     criarConexao: (d: ConexaoInput) => pedir<ConexaoIA>("/ai/conexoes", { method: "POST", body: JSON.stringify(d) }),
     editarConexao: (id: number, d: ConexaoInput) => pedir<ConexaoIA>(`/ai/conexoes/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
     apagarConexao: (id: number) => pedir<void>(`/ai/conexoes/${id}`, { method: "DELETE" }),

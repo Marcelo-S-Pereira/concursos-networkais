@@ -28,14 +28,17 @@ export default function Revisao() {
             <p className="sub">Revisão espaçada · {i + 1} de {devidas.length}</p>
             <article className="q-prova">
                 <header><strong>Questão {q.numero}</strong> <span className="disc">{q.disciplina}</span></header>
-                {q.enunciado_col2 && q.enunciado_col2.trim() ? (
-                    <div className="enun-2col">
-                        <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
-                        <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado_col2) }} />
-                    </div>
-                ) : (
-                    <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                {(q.enunciado.trim() || (q.enunciado_col2 && q.enunciado_col2.trim())) && (
+                    q.enunciado_col2 && q.enunciado_col2.trim() ? (
+                        <div className="enun-2col">
+                            <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                            <div className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado_col2) }} />
+                        </div>
+                    ) : (
+                        <p className="enun" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.enunciado.replace(/\n\[figura:.*\]/, "")) }} />
+                    )
                 )}
+                {q.pergunta && q.pergunta.trim() && <div className="pergunta" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q.pergunta) }} />}
                 {q.tem_figura && <img className="figura" src={api.figuraUrl(q.id)} alt="figura" />}
                 <ol className="alts-prova">
                     {q.alternativas.map((a) => (
