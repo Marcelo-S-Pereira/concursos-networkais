@@ -75,6 +75,20 @@ h1 { font-size: 1.6rem; margin: 0 0 4px; }
 }
 .abas button.ativa { background: var(--cartao); color: var(--texto); border-color: var(--texto); }
 
+/* Menu lateral (hambúrguer) */
+.topo-esq { display: flex; align-items: center; gap: 12px; }
+.topo-esq .hamburguer { margin-left: 0; min-height: 0; font-size: 1.35rem; line-height: 1; padding: 4px 11px; border: 1px solid var(--borda); border-radius: 8px; background: var(--fundo); color: var(--texto); cursor: pointer; }
+.topo-esq .hamburguer:hover { background: var(--borda); }
+.menu-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 40; }
+.menu-lateral { position: fixed; top: 0; left: 0; height: 100vh; width: 260px; max-width: 82vw; background: var(--cartao); border-right: 1px solid var(--borda); box-shadow: 2px 0 16px rgba(0,0,0,.15); transform: translateX(-100%); transition: transform .22s ease; z-index: 41; display: flex; flex-direction: column; }
+.menu-lateral.aberto { transform: translateX(0); }
+.menu-cab { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--borda); }
+.menu-cab strong { font-size: 1rem; }
+.menu-itens { display: flex; flex-direction: column; padding: 8px; gap: 2px; overflow-y: auto; }
+.menu-itens button { text-align: left; padding: 11px 14px; border: none; border-radius: 8px; background: transparent; color: var(--texto); font-size: .95rem; cursor: pointer; }
+.menu-itens button:hover { background: var(--fundo); }
+.menu-itens button.ativa { background: var(--texto); color: var(--cartao); font-weight: 600; }
+
 .explica { margin: 0; color: var(--suave); font-size: .92rem; }
 .sucesso { margin: 0; color: var(--ok); font-weight: 600; }
 
