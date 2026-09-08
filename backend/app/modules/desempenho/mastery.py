@@ -41,6 +41,32 @@ def por_enfase(itens: list[tuple[str, bool]]) -> list[dict]:
     return saida
 
 
+def tempo_por_enfase(itens: list[tuple[str, int | None]]) -> list[dict]:
+    """itens: (disciplina/ênfase, tempo_s | None). Por ênfase, devolve amostra,
+    mediana, média e P75 do tempo de resposta — só das questões que têm tempo."""
+    import statistics
+
+    agrupado: dict[str, list[int]] = {}
+    for enfase, t in itens:
+        if t is None:
+            continue
+        agrupado.setdefault(enfase or "Sem classificação", []).append(int(t))
+
+    saida = []
+    for enfase, tempos in sorted(agrupado.items()):
+        ordenados = sorted(tempos)
+        n = len(ordenados)
+        idx75 = min(n - 1, round(0.75 * (n - 1)))
+        saida.append({
+            "enfase": enfase,
+            "amostra": n,
+            "mediana_s": round(statistics.median(ordenados)),
+            "media_s": round(statistics.mean(ordenados)),
+            "p75_s": ordenados[idx75],
+        })
+    return saida
+
+
 def rotulo_delta(delta: float) -> str:
     if delta >= 15:
         return "muito acima"

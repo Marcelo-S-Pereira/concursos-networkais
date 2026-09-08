@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -23,6 +23,8 @@ class User(Base):
 
     telefone: Mapped[str] = mapped_column(String(20))
     role: Mapped[str] = mapped_column(String(32), default="aluno")
+    # acesso vitalício: não consome créditos (só o admin liga/desliga, no servidor)
+    vitalicio: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     codigos: Mapped[list["LoginCode"]] = relationship(back_populates="user", cascade="all, delete-orphan")

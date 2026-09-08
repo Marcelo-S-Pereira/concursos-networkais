@@ -13,11 +13,13 @@ class EmphasisPublicStat(Base):
     __tablename__ = "emphasis_public_stats"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    exam_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)  # caderno (None = global antigo)
+    disciplina: Mapped[str] = mapped_column(String(120), default="")
     banca: Mapped[str] = mapped_column(String(80), default="")
     orgao: Mapped[str] = mapped_column(String(120), default="")
     cargo: Mapped[str] = mapped_column(String(160), default="")
     ano: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    enfase: Mapped[str] = mapped_column(String(120), index=True)
+    enfase: Mapped[str] = mapped_column(String(200), index=True)  # nome do subtema
     amostra: Mapped[int | None] = mapped_column(Integer, nullable=True)  # N de respostas
     acerto_pct: Mapped[float | None] = mapped_column(Float, nullable=True)  # % que acertam
     fonte: Mapped[str] = mapped_column(String(300), default="")

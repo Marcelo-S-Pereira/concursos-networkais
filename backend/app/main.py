@@ -1,12 +1,29 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.monitor import loop_monitor
 
 settings = get_settings()
 
-app = FastAPI(title="APP Concursos", version="0.1.0", docs_url=None if settings.is_production else "/docs")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    tarefa = asyncio.create_task(loop_monitor())  # vigia a saúde da ambiente de execucao em segundo plano
+    try:
+        yield
+    finally:
+        tarefa.cancel()
+
+
+app = FastAPI(
+    title="APP Concursos", version="0.1.0",
+    docs_url=None if settings.is_production else "/docs", lifespan=lifespan,
+)
 
 # Sessão em cookie assinado. HttpOnly (JavaScript não lê), SameSite=lax (corta
 # CSRF de navegação cruzada) e Secure em produção, onde tudo é HTTPS.

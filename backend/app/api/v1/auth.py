@@ -65,6 +65,14 @@ def _para_saida(u: User) -> UsuarioOut:
 
 @router.post("/cadastro", status_code=status.HTTP_201_CREATED)
 def cadastrar(dados: CadastroIn, db: Session = Depends(get_db)) -> dict:
+    from app.core.flags import cadastros_bloqueados
+
+    # protege a ambiente de execucao: quando o admin bloqueia (ou o monitor auto-bloqueia em carga
+    # crítica), novos cadastros são recusados. O dono já existe, não é afetado.
+    ja_tem_usuario = db.execute(select(User.id).limit(1)).scalar_one_or_none() is not None
+    if ja_tem_usuario and cadastros_bloqueados(db):
+        raise HTTPException(status_code=403, detail="Cadastros temporariamente fechados. Tente mais tarde.")
+
     cpf = normalizar_digitos(dados.cpf)
     telefone = normalizar_digitos(dados.telefone)
 

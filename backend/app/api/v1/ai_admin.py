@@ -15,6 +15,7 @@ from app.core.crypto import cifrar_ia, decifrar_ia, mascarar_chave
 from app.db.models import AiConnection, AiPlatform, User
 from app.db.session import get_db
 from app.modules.ai_registry import cliente, resolver
+from app.modules.ai_registry.telemetria import resumo_por_conexao
 
 router = APIRouter(prefix="/ai/conexoes")
 
@@ -81,6 +82,12 @@ def listar(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
         select(AiConnection).order_by(AiConnection.categoria, AiConnection.ativa.desc(), AiConnection.ordem_fallback)
     ).scalars()
     return [_saida(c) for c in conns]
+
+
+@router.get("/uso")
+def uso(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Telemetria por modelo: tokens, requisições, tempo, custo R$/US$, erros."""
+    return resumo_por_conexao(db)
 
 
 @router.post("", response_model=ConexaoOut, status_code=201)

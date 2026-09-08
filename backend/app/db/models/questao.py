@@ -17,6 +17,8 @@ class Exam(Base):
     cargo: Mapped[str] = mapped_column(String(160))
     ano: Mapped[int | None] = mapped_column(Integer, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # soft delete: caderno vai para a lixeira (não some da base); None = ativo
+    excluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     questoes: Mapped[list["Question"]] = relationship(back_populates="exam", cascade="all, delete-orphan")
 
@@ -32,8 +34,9 @@ class Question(Base):
     exam_id: Mapped[int] = mapped_column(ForeignKey("exams.id", ondelete="CASCADE"), index=True)
     numero: Mapped[int] = mapped_column(Integer)
     disciplina: Mapped[str] = mapped_column(String(60), default="")
-    enunciado: Mapped[str] = mapped_column(Text)  # coluna esquerda
-    enunciado_col2: Mapped[str] = mapped_column(Text, default="")  # coluna direita
+    enunciado: Mapped[str] = mapped_column(Text)  # texto de apoio, coluna esquerda
+    enunciado_col2: Mapped[str] = mapped_column(Text, default="")  # texto de apoio, coluna direita
+    pergunta: Mapped[str] = mapped_column(Text, default="")  # o enunciado da questão (a pergunta)
     gabarito: Mapped[str | None] = mapped_column(String(1), nullable=True)  # A-E; None se o gabarito não casou
     tem_figura: Mapped[bool] = mapped_column(Boolean, default=False)
     modo_exibicao: Mapped[str] = mapped_column(String(10), default="texto")  # texto | imagem

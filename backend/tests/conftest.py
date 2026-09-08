@@ -27,6 +27,8 @@ if not _p.path.endswith("_test_db"):
     _url = urlunparse(_p._replace(path="/concursos_test_db"))
 os.environ["DATABASE_URL"] = _url
 
+from sqlalchemy import text  # noqa: E402
+
 from app.db import models  # noqa: E402,F401  - popula o metadata; sem isso create_all não cria nada
 from app.db.base import Base  # noqa: E402
 from app.db.session import engine  # noqa: E402
@@ -36,4 +38,15 @@ assert engine.url.database.endswith("_test_db"), (
     "Só rodam em um banco terminado em _test_db."
 )
 
+# O RAG usa colunas VECTOR (pgvector); a tabela rag_chunks só é criável com a
+# extensão presente. Em produção quem cria é a migration 0001; aqui garantimos
+# antes do create_all, senão a suíte quebra num banco de teste recém-criado.
+with engine.begin() as _conn:
+    _conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+# Banco de teste é descartável: recriamos o schema do zero a cada sessão. Só
+# create_all não basta — ele pula tabelas que já existem e nunca adiciona colunas
+# novas, então o schema derivava dos modelos a cada migration nova (ex.: a coluna
+# excluido_em de exams). drop_all + create_all mantém o teste sempre igual ao modelo.
+Base.metadata.drop_all(engine)
 Base.metadata.create_all(engine)

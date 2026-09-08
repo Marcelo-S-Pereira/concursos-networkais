@@ -34,6 +34,28 @@ def _corpo_html(nome: str, codigo: str) -> str:
     """
 
 
+def enviar_email(destino: str, assunto: str, corpo_texto: str) -> bool:
+    """Envio genérico (texto simples). Usado para alertas ao admin. Nunca lança."""
+    s = get_settings()
+    if not s.smtp_user or not s.smtp_password:
+        log.warning("SMTP não configurado. E-mail para %s não enviado: %s", destino, assunto)
+        return False
+    mensagem = MIMEMultipart("alternative")
+    mensagem["From"] = s.smtp_from or s.smtp_user
+    mensagem["To"] = destino
+    mensagem["Subject"] = assunto
+    mensagem.attach(MIMEText(corpo_texto, "plain", "utf-8"))
+    try:
+        with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=20) as servidor:
+            servidor.starttls()
+            servidor.login(s.smtp_user, s.smtp_password)
+            servidor.sendmail(s.smtp_user, destino, mensagem.as_string())
+        return True
+    except Exception as erro:  # noqa: BLE001
+        log.error("Falha ao enviar alerta para %s: %s", destino, erro)
+        return False
+
+
 def enviar_codigo(destino: str, nome: str, codigo: str) -> bool:
     s = get_settings()
     if not s.smtp_user or not s.smtp_password:

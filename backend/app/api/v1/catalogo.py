@@ -16,10 +16,29 @@ router = APIRouter(prefix="/ai/catalogo")
 TIPO_CATEGORIA = {
     "chat": "texto", "language": "texto", "code": "texto",
     "embedding": "embeddings", "embeddings": "embeddings",
-    "image": "visao", "vision": "visao",
+    "vision": "visao",
     "audio": "transcricao", "transcribe": "transcricao", "stt": "transcricao",
     "tts": "voz", "speech": "voz",
 }
+
+# geradores de imagem/vídeo — o app não gera mídia, então não entram no catálogo
+# (poluíam a categoria "visão", que aqui é VLM para LER figura, não gerar).
+TIPOS_GERACAO = {"image", "video"}
+
+# A Together (e afins) marca VLM como type "chat", igual a um LLM de texto — não há
+# flag de modalidade na API. Só dá para separar por nome. Estes padrões são de
+# modelos que LEEM imagem (VLM); casando, o modelo vai para a categoria "visão".
+VLM_PADROES = (
+    "vision", "-vl", "vl-", "-vl2", "internvl", "llava", "pixtral", "molmo",
+    "qwen-vl", "qwen2-vl", "qwen2.5-vl", "qwen3-vl", "gemma-3", "aria",
+    "kimi-vl", "cogvlm", "phi-3-vision", "phi-3.5-vision", "phi-4-multimodal",
+    "idefics", "smolvlm", "deepseek-vl", "minimax-m3",
+)
+
+
+def _eh_vlm(model_id: str) -> bool:
+    m = model_id.lower()
+    return any(p in m for p in VLM_PADROES)
 
 
 class PlatOut(BaseModel):
@@ -117,7 +136,9 @@ def sincronizar(platform_id: int, _: User = Depends(apenas_superadmin), db: Sess
         if not model_id:
             continue
         tipo = str(it.get("type") or "").lower() if isinstance(it, dict) else ""
-        categoria = TIPO_CATEGORIA.get(tipo, "texto")
+        if tipo in TIPOS_GERACAO:
+            continue  # gerador de imagem/vídeo: o app não usa, não polui o catálogo
+        categoria = "visao" if tipo == "chat" and _eh_vlm(model_id) else TIPO_CATEGORIA.get(tipo, "texto")
         existe = db.execute(select(CatalogModel).where(
             CatalogModel.plataforma == nome, CatalogModel.categoria == categoria,
             CatalogModel.model_id == model_id)).scalar_one_or_none()

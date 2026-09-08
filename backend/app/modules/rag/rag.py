@@ -87,7 +87,8 @@ def buscar(db: Session, consulta: str, colecao: str | None = None, k: int = 6) -
     vetor = gerar_embeddings(db, [f"Instruct: buscar trecho relevante\nQuery: {consulta}"], origem="rag_busca")[0]
     literal = "[" + ",".join(str(x) for x in vetor) + "]"
     sql = """
-        SELECT c.conteudo, d.titulo, c.chunk_index
+        SELECT c.conteudo, d.titulo, c.chunk_index,
+               c.embedding <=> CAST(:vec AS vector) AS distancia
         FROM rag_chunks c JOIN rag_documents d ON d.id = c.document_id
         WHERE c.embedding IS NOT NULL
     """
@@ -97,4 +98,34 @@ def buscar(db: Session, consulta: str, colecao: str | None = None, k: int = 6) -
         params["colecao"] = colecao
     sql += " ORDER BY c.embedding <=> CAST(:vec AS vector) LIMIT :k"
     linhas = db.execute(text(sql), params).all()
-    return [{"titulo": t, "chunk": idx, "conteudo": cont} for cont, t, idx in linhas]
+    return [{"titulo": t, "chunk": idx, "conteudo": cont, "distancia": float(dist)}
+            for cont, t, idx, dist in linhas]
+
+
+PERGUNTA_SISTEMA = (
+    "Você responde dúvidas sobre um EDITAL de concurso APENAS com base nos trechos "
+    "fornecidos abaixo. Se a resposta não estiver nos trechos, diga claramente que o "
+    "edital, nos trechos encontrados, não trata disso — NUNCA invente regra, prazo, "
+    "número de vagas, data ou critério. Cite o número do trecho que embasa cada afirmação. "
+    "Seja objetivo e direto."
+)
+
+
+def perguntar(db: Session, pergunta: str, colecao: str | None = "oficial", k: int = 6) -> dict:
+    """Responde uma pergunta ANCORADA nos trechos do edital (RAG), com citação.
+
+    O LLM só sintetiza os trechos recuperados; nunca inventa. Se não houver trecho,
+    devolve aviso — nunca uma resposta 'de cabeça'."""
+    from app.modules.ai_registry import servico
+
+    trechos = buscar(db, pergunta, colecao=colecao, k=k)
+    if not trechos:
+        return {"resposta": "Não há documento indexado para consultar ainda.", "trechos": []}
+
+    contexto = "\n\n".join(f"[trecho {t['chunk']}] {t['conteudo']}" for t in trechos)
+    mensagens = [
+        {"role": "system", "content": PERGUNTA_SISTEMA},
+        {"role": "user", "content": f"Pergunta: {pergunta}\n\nTrechos do edital:\n{contexto}"},
+    ]
+    resposta = servico.conversar(db, "texto", mensagens, origem="rag_pergunta", max_tokens=800)
+    return {"resposta": (resposta or "").strip(), "trechos": trechos}

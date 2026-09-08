@@ -12,6 +12,7 @@ from app.api.deps import usuario_atual
 from app.db.models import EmphasisPublicStat, Exam, ExamRules, SimulationAnswer, SimulationRun, User
 from app.db.session import get_db
 from app.modules.desempenho.mastery import por_enfase, rotulo_delta
+from app.modules.desempenho.mastery import tempo_por_enfase as calc_tempo_enfase
 from app.modules.desempenho.revisao import agendar_erro
 
 router = APIRouter(prefix="/simulado")
@@ -33,6 +34,7 @@ class RunOut(BaseModel):
 
 class EntregarIn(BaseModel):
     respostas: dict[int, str]  # {question_id: "A".."E"}
+    tempos: dict[int, int] | None = None  # {question_id: segundos} — opcional
 
 
 class ResultadoOut(BaseModel):
@@ -45,6 +47,8 @@ class ResultadoOut(BaseModel):
     resultado: dict[int, bool]
     por_enfase: list[dict]
     classificacao: dict | None
+    tempo_por_enfase: list[dict] = []
+    tempo_alvo_s: int | None = None
 
 
 @router.post("/iniciar", response_model=RunOut)
@@ -81,8 +85,10 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
 
     exam = db.get(Exam, run.exam_id)
     questoes = {q.id: q for q in exam.questoes if not q.descartada}
+    tempos = dados.tempos or {}
     resultado: dict[int, bool] = {}
     itens_enfase: list[tuple[str, bool]] = []
+    itens_tempo: list[tuple[str, int | None]] = []
     acertos = respondidas = 0
     for qid, q in questoes.items():
         letra = (dados.respostas.get(qid) or "").upper() or None
@@ -93,9 +99,13 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
         if correta:
             acertos += 1
         itens_enfase.append((q.disciplina, correta))
+        tempo = tempos.get(qid)
+        if letra and tempo is not None:  # só conta o tempo de questão respondida
+            itens_tempo.append((q.disciplina, int(tempo)))
         if not correta:
             agendar_erro(db, user.id, qid)
-        db.add(SimulationAnswer(run_id=run.id, question_id=qid, letra=letra, correta=correta))
+        db.add(SimulationAnswer(run_id=run.id, question_id=qid, letra=letra, correta=correta,
+                                tempo_resposta_s=int(tempo) if tempo is not None else None))
 
     run.status = "finished"
     run.acertos = acertos
@@ -104,6 +114,8 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
 
     total = len(questoes)
     enfases = por_enfase(itens_enfase)
+    tempos_enfase = calc_tempo_enfase(itens_tempo)
+    tempo_alvo = round(run.duration_seconds / run.question_count) if run.question_count else None
     _anexar_historico(db, exam, enfases)
 
     from sqlalchemy import select
@@ -120,6 +132,7 @@ def entregar(run_id: int, dados: EntregarIn, user: User = Depends(usuario_atual)
         percentual_bruto=round(acertos / total * 100, 1) if total else 0.0,
         encerrado_no_prazo=no_prazo, resultado=resultado, por_enfase=enfases,
         classificacao=classificacao,
+        tempo_por_enfase=tempos_enfase, tempo_alvo_s=tempo_alvo,
     )
 
 

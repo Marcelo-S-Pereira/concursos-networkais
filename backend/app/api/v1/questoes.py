@@ -1,4 +1,5 @@
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
@@ -27,6 +28,7 @@ class QuestaoOut(BaseModel):
     disciplina: str
     enunciado: str
     enunciado_col2: str
+    pergunta: str
     gabarito: str | None
     tem_figura: bool
     modo_exibicao: str
@@ -45,11 +47,30 @@ class ExamOut(BaseModel):
     ano: int | None
     total: int
     revisar: int
+    excluido_em: datetime | None = None
+
+
+class ExamPatch(BaseModel):
+    banca: str | None = None
+    orgao: str | None = None
+    cargo: str | None = None
+    ano: int | None = None
+
+
+def _exam_out(ex: Exam) -> ExamOut:
+    qs = ex.questoes
+    return ExamOut(
+        id=ex.id, banca=ex.banca, orgao=ex.orgao, cargo=ex.cargo, ano=ex.ano,
+        total=len([q for q in qs if not q.descartada]),
+        revisar=len([q for q in qs if q.confianca < 1.0 and not q.revisada and not q.descartada]),
+        excluido_em=ex.excluido_em,
+    )
 
 
 class QuestaoPatch(BaseModel):
     enunciado: str | None = None
     enunciado_col2: str | None = None
+    pergunta: str | None = None
     gabarito: str | None = None
     disciplina: str | None = None
     alternativas: dict[str, str] | None = None  # {"A": "texto", ...}
@@ -61,7 +82,7 @@ class QuestaoPatch(BaseModel):
 def _para_saida(q: Question) -> QuestaoOut:
     return QuestaoOut(
         id=q.id, numero=q.numero, pagina=q.pagina, disciplina=q.disciplina,
-        enunciado=q.enunciado, enunciado_col2=q.enunciado_col2,
+        enunciado=q.enunciado, enunciado_col2=q.enunciado_col2, pergunta=q.pergunta,
         gabarito=q.gabarito, tem_figura=q.tem_figura, modo_exibicao=q.modo_exibicao,
         confianca=q.confianca, aviso=q.aviso,
         revisada=q.revisada, descartada=q.descartada,
@@ -71,13 +92,16 @@ def _para_saida(q: Question) -> QuestaoOut:
 
 @router.get("", response_model=list[ExamOut])
 def listar_exames(_: User = Depends(usuario_atual), db: Session = Depends(get_db)):
-    saida = []
-    for ex in db.execute(select(Exam).order_by(Exam.id)).scalars():
-        qs = ex.questoes
-        saida.append(ExamOut(id=ex.id, banca=ex.banca, orgao=ex.orgao, cargo=ex.cargo, ano=ex.ano,
-                             total=len([q for q in qs if not q.descartada]),
-                             revisar=len([q for q in qs if q.confianca < 1.0 and not q.revisada and not q.descartada])))
-    return saida
+    """Cadernos ativos (não excluídos)."""
+    q = select(Exam).where(Exam.excluido_em.is_(None)).order_by(Exam.id)
+    return [_exam_out(ex) for ex in db.execute(q).scalars()]
+
+
+@router.get("/lixeira", response_model=list[ExamOut])
+def listar_lixeira(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Cadernos na lixeira, na fila de exclusão permanente (o mais antigo primeiro)."""
+    q = select(Exam).where(Exam.excluido_em.is_not(None)).order_by(Exam.excluido_em)
+    return [_exam_out(ex) for ex in db.execute(q).scalars()]
 
 
 @router.get("/{exam_id}/questoes", response_model=list[QuestaoOut])
@@ -97,6 +121,8 @@ def editar_questao(qid: int, dados: QuestaoPatch, _: User = Depends(apenas_super
         q.enunciado = dados.enunciado
     if dados.enunciado_col2 is not None:
         q.enunciado_col2 = dados.enunciado_col2
+    if dados.pergunta is not None:
+        q.pergunta = dados.pergunta
     if dados.disciplina is not None:
         q.disciplina = dados.disciplina
     if dados.gabarito is not None:
@@ -161,6 +187,7 @@ async def salvar_figura(
 
 class RespostasIn(BaseModel):
     respostas: dict[int, str]  # {question_id: "A".."E"}
+    tempos: dict[int, int] | None = None  # {question_id: segundos} — opcional
 
 
 class ResultadoOut(BaseModel):
@@ -170,6 +197,8 @@ class ResultadoOut(BaseModel):
     percentual_bruto: float
     resultado: dict[int, bool]  # {question_id: acertou}
     por_enfase: list[dict]
+    tempo_por_enfase: list[dict] = []
+    tempo_alvo_s: int | None = None
 
 
 @router.post("/{exam_id}/corrigir", response_model=ResultadoOut)
@@ -182,15 +211,21 @@ def corrigir_simulado(
     if not exam:
         raise HTTPException(status_code=404, detail="Prova não encontrada.")
     from app.modules.desempenho.mastery import por_enfase as calc_enfase
+    from app.modules.desempenho.mastery import tempo_por_enfase as calc_tempo
+    tempos = dados.tempos or {}
     questoes = {q.id: q for q in exam.questoes if not q.descartada}
     resultado: dict[int, bool] = {}
     itens: list[tuple[str, bool]] = []
+    itens_tempo: list[tuple[str, int | None]] = []
     acertos = 0
     for qid, questao in questoes.items():
         marcada = dados.respostas.get(qid)
         acertou = marcada is not None and questao.gabarito is not None and marcada.upper() == questao.gabarito
         resultado[qid] = acertou
         itens.append((questao.disciplina, acertou))
+        tempo = tempos.get(qid)
+        if marcada and tempo is not None:
+            itens_tempo.append((questao.disciplina, int(tempo)))
         if acertou:
             acertos += 1
     total = len(questoes)
@@ -201,6 +236,7 @@ def corrigir_simulado(
         percentual_bruto=round(acertos / total * 100, 1) if total else 0.0,
         resultado=resultado,
         por_enfase=calc_enfase(itens),
+        tempo_por_enfase=calc_tempo(itens_tempo),
     )
 
 
@@ -313,12 +349,56 @@ async def importar_caderno(
     )
 
 
+@router.patch("/{exam_id}", response_model=ExamOut)
+def editar_caderno(exam_id: int, dados: ExamPatch, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Edita os dados mestre do caderno (banca/órgão/cargo/ano)."""
+    exam = db.get(Exam, exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Caderno não encontrado.")
+    if dados.banca is not None:
+        exam.banca = dados.banca.strip() or exam.banca
+    if dados.orgao is not None:
+        exam.orgao = dados.orgao.strip() or exam.orgao
+    if dados.cargo is not None:
+        exam.cargo = dados.cargo.strip() or exam.cargo
+    if dados.ano is not None:
+        exam.ano = dados.ano
+    db.commit()
+    db.refresh(exam)
+    return _exam_out(exam)
+
+
 @router.delete("/{exam_id}", status_code=204)
 def apagar_caderno(exam_id: int, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Exclusão SUAVE: o caderno vai para a lixeira, não some da base."""
     exam = db.get(Exam, exam_id)
-    if exam:
-        db.delete(exam)
+    if exam and exam.excluido_em is None:
+        exam.excluido_em = datetime.now(UTC)
         db.commit()
+
+
+@router.post("/{exam_id}/restaurar", response_model=ExamOut)
+def restaurar_caderno(exam_id: int, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Tira o caderno da lixeira e o devolve à lista de ativos."""
+    exam = db.get(Exam, exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Caderno não encontrado.")
+    exam.excluido_em = None
+    db.commit()
+    db.refresh(exam)
+    return _exam_out(exam)
+
+
+@router.delete("/{exam_id}/permanente", status_code=204)
+def apagar_permanente(exam_id: int, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Exclusão DEFINITIVA — só de caderno que já está na lixeira. Sem volta."""
+    exam = db.get(Exam, exam_id)
+    if not exam:
+        return
+    if exam.excluido_em is None:
+        raise HTTPException(status_code=409, detail="Mande o caderno para a lixeira antes de excluir em definitivo.")
+    db.delete(exam)
+    db.commit()
 
 
 class ExplicarIn(BaseModel):

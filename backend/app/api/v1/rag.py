@@ -108,3 +108,24 @@ def buscar_rota(dados: BuscaIn, _: User = Depends(apenas_superadmin), db: Sessio
         raise HTTPException(status_code=400, detail=str(e)) from e
     except AiCallError as e:
         raise HTTPException(status_code=502, detail=f"Embeddings falharam: {e}") from e
+
+
+class PerguntaIn(BaseModel):
+    pergunta: str
+    colecao: str | None = "oficial"
+
+
+@router.post("/perguntar")
+def perguntar_rota(dados: PerguntaIn, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.ai_registry.cliente import AiCallError
+    from app.modules.ai_registry.servico import SemConexaoIA
+    from app.modules.rag.rag import perguntar
+
+    if not dados.pergunta.strip():
+        raise HTTPException(status_code=422, detail="Escreva a pergunta.")
+    try:
+        return perguntar(db, dados.pergunta, dados.colecao or "oficial")
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except AiCallError as e:
+        raise HTTPException(status_code=502, detail=f"IA falhou: {e}") from e
