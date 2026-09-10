@@ -64,7 +64,36 @@ export type DesempenhoResumo = {
     gamificacao: Gamificacao
 }
 export type AdminOverview = { usuarios: number; simulados_feitos: number; cadernos: number; questoes: number }
-export type UsuarioAdmin = { id: number; nome: string; email: string; role: string; saldo: number; vitalicio: boolean }
+export type RecursoConcedido = { feature: string; nome: string; limite_diario: number; usado_hoje: number }
+export type UsuarioAdmin = {
+    id: number; nome: string; email: string; role: string; saldo: number; vitalicio: boolean
+    simulados: number; recursos: RecursoConcedido[]
+}
+export type RecursoCatalogo = Record<string, { nome: string; unidade: string; custo_unidade_api: number }>
+export type MeuRecurso = { liberado: boolean; limite_diario: number | null; usado_hoje: number }
+export type YoutubeUso = { buscas_hoje: number; unidades_hoje: number; cota_diaria_unidades: number; pct: number }
+export type Conversa = {
+    id: number; exam_id: number | null; titulo: string
+    modelo_texto_id: number | null; modelo_visao_id: number | null
+    modelo_voz_id: number | null; modelo_transcricao_id: number | null; modo_voz: boolean
+}
+export type ModeloOpcao = { id: number; nome: string; modelo: string; ativa: boolean }
+export type ModelosChat = { texto: ModeloOpcao[]; visao: ModeloOpcao[]; voz: ModeloOpcao[]; transcricao: ModeloOpcao[] }
+export type EditarConversaIn = {
+    titulo?: string
+    modelo_texto_id?: number | null; modelo_visao_id?: number | null
+    modelo_voz_id?: number | null; modelo_transcricao_id?: number | null
+    modo_voz?: boolean
+}
+export type ChatMsg = { role: string; conteudo: string; question_id: number | null }
+export type JanelaUso = { usadas: number; limite: number; restam: number | null; reinicia_em?: string | null; libera_em?: string | null }
+export type LimitesUso = { isento: boolean; janela_sessao_h: number; janela_semana_d: number; sessao: JanelaUso; semana: JanelaUso; bloqueado: boolean }
+export type LimitesConfig = { sessao_msgs: number; semana_msgs: number; janela_sessao_h: number; janela_semana_d: number }
+export type Orcamento = {
+    orcamento_mensal_usd: number; orcamento_diario_usd: number
+    gasto_hoje_usd: number; gasto_mes_usd: number
+    pct_dia: number; pct_mes: number; projecao_mes_usd: number; diario_excedido: boolean
+}
 export type CreditosResumo = {
     saldo: number; total_ganho: number; total_gasto: number
     extrato: { delta: number; tipo: string; descricao: string; quando: string | null }[]
@@ -73,6 +102,8 @@ export type CreditosResumo = {
 export type PlataformaPagamento = { id: number; titulo: string; provedor: string; public_key: string; ativa: boolean; token_mascarado: string }
 export type PlataformaPagamentoInput = { titulo: string; provedor: string; access_token: string; public_key: string }
 export type ConfigPagamento = { preco_reais: number; creditos_por_compra: number; creditos_por_simulado: number }
+export type YoutubeStatus = { configurada: boolean; chave_mascarada: string | null }
+export type VideoResultado = { video_id: string; titulo: string; canal: string; miniatura: string; url: string }
 export type SaudeVPS = {
     cpus: number; load_1min: number; load_por_cpu: number
     memoria_pct: number | null; disco_pct: number | null; conexoes_db: number | null
@@ -193,6 +224,13 @@ export const api = {
     desempenho: () => pedir<DesempenhoResumo>("/desempenho"),
     adminOverview: () => pedir<AdminOverview>("/admin/overview"),
     adminUsuarios: () => pedir<UsuarioAdmin[]>("/admin/usuarios"),
+    recursosCatalogo: () => pedir<RecursoCatalogo>("/admin/recursos/catalogo"),
+    concederRecurso: (email: string, feature: string, limite_diario: number) =>
+        pedir<{ ok: boolean }>("/admin/recursos/conceder", { method: "POST", body: JSON.stringify({ email, feature, limite_diario }) }),
+    revogarRecurso: (email: string, feature: string) =>
+        pedir<{ ok: boolean }>("/admin/recursos/revogar", { method: "POST", body: JSON.stringify({ email, feature }) }),
+    adminYoutubeUso: () => pedir<YoutubeUso>("/admin/youtube/uso"),
+    chatRecursos: () => pedir<Record<string, MeuRecurso>>("/chat/recursos"),
     adminVitalicio: (email: string, vitalicio: boolean) =>
         pedir<{ email: string; vitalicio: boolean }>("/admin/vitalicio", { method: "POST", body: JSON.stringify({ email, vitalicio }) }),
     campanhaPrevia: (alvo: string, limite: number) =>
@@ -200,6 +238,29 @@ export const api = {
     aplicarCampanha: (alvo: string, quantidade: number, motivo: string, limite: number) =>
         pedir<{ beneficiados: number }>("/admin/campanha", { method: "POST", body: JSON.stringify({ alvo, quantidade, motivo, limite }) }),
     meusCreditos: () => pedir<CreditosResumo>("/creditos"),
+    chatConversas: () => pedir<Conversa[]>("/chat/conversas"),
+    chatCriarConversa: (exam_id: number | null, titulo: string) => pedir<Conversa>("/chat/conversas", { method: "POST", body: JSON.stringify({ exam_id, titulo }) }),
+    chatMensagens: (cid: number) => pedir<Conversa & { mensagens: ChatMsg[] }>(`/chat/conversas/${cid}`),
+    chatModelos: () => pedir<ModelosChat>("/chat/modelos"),
+    chatEditarConversa: (cid: number, d: EditarConversaIn) =>
+        pedir<Conversa>(`/chat/conversas/${cid}`, { method: "PATCH", body: JSON.stringify(d) }),
+    chatEnviar: (cid: number, texto: string, question_id: number | null, imagem_b64?: string | null) => pedir<{ resposta: string; saldo: number; limites: LimitesUso }>(`/chat/conversas/${cid}/mensagem`, { method: "POST", body: JSON.stringify({ texto, question_id, imagem_b64: imagem_b64 ?? null }) }),
+    // Cartões impressos no chat sem IA — texto vem do servidor, nunca do cliente.
+    chatLerQuestao: (cid: number, qid: number) => pedir<{ conteudo: string }>(`/chat/conversas/${cid}/questao/${qid}`, { method: "POST" }),
+    chatLerGemea: (cid: number, twinId: number, ordem: "A" | "B") => pedir<{ conteudo: string }>(`/chat/conversas/${cid}/gemea/${twinId}?ordem=${ordem}`, { method: "POST" }),
+    chatResponderGemea: (cid: number, twinId: number, letra: string) => pedir<{ acertou: boolean; gabarito: string; conteudo: string }>(`/chat/conversas/${cid}/gemea/${twinId}/responder`, { method: "POST", body: JSON.stringify({ letra }) }),
+    chatFechamento: (cid: number, qid: number, letraPrincipal: string, gemeaAOk: boolean, gemeaBOk: boolean) =>
+        pedir<{ conteudo: string }>(`/chat/conversas/${cid}/questao/${qid}/fechamento`, {
+            method: "POST", body: JSON.stringify({ letra_principal: letraPrincipal, gemea_a_ok: gemeaAOk, gemea_b_ok: gemeaBOk }),
+        }),
+    chatApagar: (cid: number) => pedir<void>(`/chat/conversas/${cid}`, { method: "DELETE" }),
+    chatLimites: () => pedir<LimitesUso>("/chat/limites"),
+    adminOrcamento: () => pedir<Orcamento>("/admin/orcamento"),
+    salvarOrcamento: (mensal_usd: number, diario_usd: number | null) =>
+        pedir<Orcamento>("/admin/orcamento", { method: "POST", body: JSON.stringify({ mensal_usd, diario_usd }) }),
+    adminLimites: () => pedir<LimitesConfig>("/admin/limites"),
+    salvarLimites: (sessao_msgs: number, semana_msgs: number) =>
+        pedir<LimitesConfig>("/admin/limites", { method: "POST", body: JSON.stringify({ sessao_msgs, semana_msgs }) }),
     adminCreditar: (email: string, creditos: number, motivo: string) =>
         pedir<{ ok: boolean; saldo: number }>("/admin/creditar", { method: "POST", body: JSON.stringify({ email, creditos, motivo }) }),
     pagPlataformas: () => pedir<PlataformaPagamento[]>("/pagamentos"),
@@ -211,6 +272,11 @@ export const api = {
     testarPagPlataforma: (id: number) => pedir<{ ok: boolean | null; mensagem: string }>(`/pagamentos/${id}/testar`, { method: "POST" }),
     pagConfig: () => pedir<ConfigPagamento>("/pagamentos/config"),
     salvarPagConfig: (d: ConfigPagamento) => pedir<ConfigPagamento>("/pagamentos/config", { method: "PUT", body: JSON.stringify(d) }),
+    adminYoutube: () => pedir<YoutubeStatus>("/admin/youtube"),
+    salvarYoutube: (chave: string) => pedir<YoutubeStatus>("/admin/youtube", { method: "PUT", body: JSON.stringify({ chave }) }),
+    apagarYoutube: () => pedir<void>("/admin/youtube", { method: "DELETE" }),
+    testarYoutube: () => pedir<{ ok: boolean; mensagem: string }>("/admin/youtube/testar", { method: "POST" }),
+    chatVideos: (termo: string) => pedir<{ resultados: VideoResultado[] }>("/chat/videos", { method: "POST", body: JSON.stringify({ termo }) }),
     adminSaude: () => pedir<SaudeVPS>("/admin/saude"),
     adminBloquearCadastros: (bloqueado: boolean) =>
         pedir<{ cadastros_bloqueados: boolean }>("/admin/cadastros", { method: "POST", body: JSON.stringify({ bloqueado }) }),

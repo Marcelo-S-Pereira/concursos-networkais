@@ -60,9 +60,9 @@ h1 { font-size: 1.6rem; margin: 0 0 4px; }
 .falha { color: var(--falha); margin: 0; }
 
 /* --- topo e login --- */
-.topo { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 28px; }
-.topo h1 { margin: 0 0 2px; }
-.topo .sub { margin: 0; }
+.topo { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; margin-bottom: 28px; }
+.topo h1 { margin: 0 0 2px; font-size: 1.1rem; }
+.topo .sub { margin: 0; font-size: .8rem; }
 .topo button { margin-left: auto; }
 
 .tela-acesso { max-width: 400px; padding-top: 10vh; }
@@ -327,7 +327,7 @@ button.ia:hover { background: #5b21b6; }
 @media (prefers-color-scheme: dark) { .papel { background: #f4f1e6; } }
 
 /* --- chave celular/computador --- */
-.topo-acoes { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.topo-acoes { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .chave-modo { display: inline-flex; border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
 .chave-modo button { min-height: 0; padding: 6px 10px; background: transparent; border: 0; font-size: 1rem; }
 .chave-modo button.on { background: var(--texto); }
@@ -362,6 +362,10 @@ button.ia:hover { background: #5b21b6; }
 .form-estat h3 { margin: 0 0 10px; font-size: .95rem; }
 .grade-estat { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
 .grade-estat label { display: grid; gap: 4px; font-size: .8rem; color: var(--suave); }
+.recursos-bloco { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--borda); }
+.lista-recursos { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 5px; }
+.lista-recursos li { display: flex; align-items: center; gap: 8px; font-size: .82rem; }
+.lista-recursos li .dica { margin-left: auto; }
 .tabela-estat { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: .85rem; }
 .tabela-estat th, .tabela-estat td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borda); }
 .tabela-estat th { color: var(--suave); font-weight: 600; }
@@ -552,3 +556,200 @@ button.ia:hover { background: #5b21b6; }
 .conf-tag { font-size: .68rem; background: var(--suave); color: #fff; padding: 1px 7px; border-radius: 20px; }
 .afericao-res { font-size: .85rem; margin-top: 8px; padding: 8px; border-radius: 8px; background: rgba(109,40,217,.1); }
 .sinc-modelos { margin: 8px 0; font-size: .82rem; }
+
+/* ===== Chat de estudo — layout de app: coluna de controles + conversa ===== */
+/* A aba do chat usa a tela toda: sem faixa vazia nas laterais nem embaixo. */
+.tela-chat { padding-bottom: 16px; }
+.tela-chat.modo-computador { max-width: 1680px; }
+
+.chat { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px;
+        height: calc(100vh - 190px); min-height: 520px; }
+
+/* Coluna da esquerda dividida em duas metades, cada uma rolando sozinha:
+   em cima o que é configurável/exploração; embaixo as conversas. */
+.chat-painel { display: grid; grid-template-rows: 1fr 1fr; gap: 12px; min-height: 0; }
+.chat-box { border: 1px solid var(--borda); border-radius: 12px; background: var(--cartao);
+            display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.chat-box-cab { display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+                border-bottom: 1px solid var(--borda); background: var(--fundo); }
+.chat-box-cab h4 { margin: 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); }
+.chat-box-cab .link { margin-left: auto; font-size: .78rem; }
+.chat-box-corpo { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; }
+.chat-box-corpo label { display: grid; gap: 4px; font-size: .76rem; color: var(--suave); }
+.chat-vazio { margin: 0; font-size: .78rem; color: var(--suave); }
+.chat-caderno { margin: 0; font-size: .8rem; font-weight: 600; }
+
+.chat-nova { display: grid; gap: 8px; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px dashed var(--borda); }
+.chat-conv { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+             padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: .82rem; }
+.chat-conv:hover { background: var(--fundo); }
+.chat-conv.ativa { background: var(--texto); color: var(--cartao); }
+.chat-conv.ativa .link { color: var(--cartao); }
+.chat-conv-titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+/* Questão em foco + ações de estudo (moram na coluna, não na conversa) */
+.chat-foco { border: 1px solid var(--borda); border-radius: 10px; padding: 9px; background: var(--fundo); }
+.chat-foco-enun { margin: 0 0 6px; font-size: .76rem; color: var(--suave); line-height: 1.45; }
+.chat-foco-fig { margin: 0 0 6px; font-size: .72rem; color: var(--suave); }
+.chat-foco-status { margin: 0; font-size: .72rem; color: var(--suave); }
+
+/* Popup único de recursos manuais (🎓): seletor A-E do gate + as 5 ações. */
+.popup-acoes { width: min(280px, 100%); }
+.resposta-gate { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.resposta-letra {
+    width: 40px; height: 40px; border-radius: 10px; font-size: 1rem; font-weight: 600;
+    border: 1px solid var(--borda); background: var(--fundo); color: var(--texto); cursor: pointer;
+}
+.resposta-letra:hover:not(:disabled) { border-color: var(--ok); }
+.resposta-letra:disabled { opacity: .5; cursor: default; }
+.chat-ritmo { margin: 0; font-size: .72rem; color: var(--suave); padding-top: 8px; border-top: 1px dashed var(--borda); }
+.chat-ritmo.apertado { color: var(--falha); font-weight: 600; }
+.chat-ritmo.livre { font-style: italic; }
+
+/* A conversa: só mensagens e compositor */
+.chat-thread { border: 1px solid var(--borda); border-radius: 12px; display: flex; flex-direction: column;
+               overflow: hidden; background: var(--cartao); min-height: 0; }
+.chat-msgs { flex: 1; min-height: 0; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.chat-abertura { margin: auto; max-width: 460px; text-align: center; color: var(--suave); }
+.chat-abertura h3 { margin: 0 0 6px; color: var(--texto); }
+.chat-abertura p { margin: 0; font-size: .88rem; line-height: 1.6; }
+.chat-msg { display: flex; }
+.chat-msg.user { justify-content: flex-end; }
+/* Bolha com largura de leitura, como no ChatGPT — texto largo demais cansa. */
+.chat-bolha { max-width: min(78%, 760px); padding: 11px 15px; border-radius: 14px; font-size: .9rem; line-height: 1.6; }
+.chat-msg.user .chat-bolha { background: var(--texto); color: var(--cartao); border-bottom-right-radius: 4px; }
+.chat-msg.assistant .chat-bolha { background: var(--fundo); border: 1px solid var(--borda); border-bottom-left-radius: 4px; }
+.chat-bolha.pensando { color: var(--suave); font-style: italic; }
+.cartao.orcamento.estourado { border-color: var(--falha); }
+.chat-erro { padding: 6px 16px; margin: 0; font-size: .82rem; }
+
+/* Compositor: caixa única, campo em linha própria e botões embaixo — o campo
+   NUNCA divide largura com os botões (foi isso que o deixou com 6px antes). */
+.chat-compositor { position: relative; padding: 12px 16px 14px; border-top: 1px solid var(--borda); }
+
+/* Reserva de lateral pra mensagem nunca correr por baixo do botão flutuante
+   (só quando ele está de fato mostrando algo — senão seria espaço vazio à toa). */
+.chat-msgs.reserva-lado.lado-direita { padding-right: 60px; }
+.chat-msgs.reserva-lado.lado-esquerda { padding-left: 60px; }
+.chat-caixa { border: 1px solid var(--borda); border-radius: 14px; padding: 8px 10px; background: var(--fundo);
+              max-width: 900px; margin: 0 auto; }
+.chat-caixa:focus-within { border-color: var(--texto); }
+.chat-caixa textarea { width: 100%; border: none; background: transparent; resize: none; outline: none;
+                       font-size: .92rem; line-height: 1.5; min-height: 46px; padding: 4px 2px; color: var(--texto); }
+.chat-botoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; position: relative; }
+.chat-espaco { flex: 1; }
+.chat-enviar { min-height: 0; padding: 7px 15px; font-weight: 600; font-size: .84rem; }
+.chat-anexo { display: flex; align-items: center; gap: 6px; font-size: .74rem; color: var(--suave); padding: 2px 2px 4px; }
+.busca-video-bloco { margin: 4px 0; }
+.busca-video-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.busca-video { display: inline-block; padding: 4px 9px; border: 1px solid var(--borda); border-radius: 7px; font-size: .8rem; text-decoration: none; color: inherit; }
+.busca-video:hover { border-color: var(--texto); }
+.video-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; max-width: 520px; }
+.video-card { display: flex; flex-direction: column; border: 1px solid var(--borda); border-radius: 10px; overflow: hidden;
+              text-decoration: none; color: inherit; background: var(--cartao); }
+.video-card:hover { border-color: var(--texto); }
+.video-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+.video-card-titulo { padding: 6px 8px 2px; font-size: .78rem; font-weight: 600; line-height: 1.3;
+                     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.video-card-canal { padding: 0 8px 8px; font-size: .7rem; color: var(--suave); }
+
+/* Botões do compositor no padrão interfaces de chat modernas: "+" redondo, pill do modelo, mic com chevron. */
+.icone-add { min-height: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; font-size: 1.15rem;
+             line-height: 1; background: transparent; border: 1px solid var(--borda); color: var(--suave); }
+.icone-add:hover { color: var(--texto); border-color: var(--texto); }
+.pill { min-height: 0; padding: 5px 10px; border-radius: 20px; background: transparent; border: 1px solid var(--borda);
+        color: var(--suave); font-size: .78rem; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; }
+.pill:hover { color: var(--texto); border-color: var(--texto); }
+.pill-modelo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icone-mic { min-height: 0; padding: 5px 9px; border-radius: 20px; background: transparent; border: 1px solid var(--borda);
+             color: var(--suave); font-size: .95rem; display: inline-flex; align-items: center; gap: 3px; }
+.icone-mic:hover { color: var(--texto); border-color: var(--texto); }
+.chevron { font-size: .7rem; }
+
+/* Popup ancorado na LINHA de botões (não no botão individual que o abre): a
+   pill do modelo pode ficar no meio da linha (entre "+" e "🎤"/"Enviar"), e um
+   nome de modelo comprido a empurra a ponto de o popup estourar a borda
+   esquerda da tela no celular. Ancorando em `.chat-botoes` (que ocupa a
+   largura inteira do compositor) o popup sempre abre dentro da tela,
+   independente de onde o botão que o abriu está na linha. */
+.popup-anchor { display: inline-flex; }
+.popup-backdrop { position: fixed; inset: 0; z-index: 65; background: transparent; }
+.popup-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 70; width: max(260px, 100%);
+              max-width: 320px; max-height: min(60vh, 420px); overflow-y: auto; background: var(--cartao);
+              border: 1px solid var(--borda); border-radius: 12px; box-shadow: 0 10px 34px rgba(0,0,0,.22); padding: 6px; }
+.popup-menu.popup-direita { left: auto; right: 0; }
+.popup-ia { width: min(300px, 100%); }
+.popup-secao { padding: 6px 4px; }
+.popup-secao + .popup-secao { border-top: 1px solid var(--borda); }
+.popup-titulo { margin: 2px 6px 4px; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+                color: var(--suave); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.popup-linha { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               min-height: 0; padding: 8px 8px; border-radius: 8px; background: transparent; border: none;
+               color: var(--texto); font-size: .84rem; text-align: left; }
+.popup-linha:hover:not(:disabled) { background: var(--fundo); }
+.popup-linha.sel { font-weight: 600; }
+.popup-linha.desligada { color: var(--suave); cursor: not-allowed; }
+.popup-nome { display: flex; flex-direction: column; overflow: hidden; }
+.popup-sub { font-size: .72rem; color: var(--suave); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup-badge { font-size: .64rem; color: var(--suave); font-style: italic; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.popup-vazio { margin: 2px 8px 4px; font-size: .76rem; color: var(--suave); }
+.popup-aviso { margin: 2px 8px 6px; font-size: .78rem; color: var(--falha); }
+.popup-ok { margin: 2px 8px; font-size: .8rem; color: var(--suave); }
+.check { color: var(--ok); font-weight: 700; }
+
+/* Estreito: empilha. Pela CLASSE do modo (o container é que encolhe, não a
+   janela) E pela janela real, no celular de verdade. */
+.modo-celular .chat, .tela.larga .chat { grid-template-columns: minmax(0, 1fr); height: auto; }
+.modo-celular .chat-painel { grid-template-rows: auto auto; }
+.modo-celular .chat-box-corpo { max-height: 210px; }
+.modo-celular .chat-thread { min-height: 60vh; }
+@media (max-width: 780px) {
+    .chat { grid-template-columns: minmax(0, 1fr); height: auto; }
+    .chat-painel { grid-template-rows: auto auto; }
+    .chat-box-corpo { max-height: 210px; }
+    .chat-thread { min-height: 60vh; }
+}
+
+/* Responder com uma mão só (trem, barra segurada) — botão pra trocar o lado +
+   cluster de respostas A-E colado nesse lado. Ancorados no PRÓPRIO
+   `.chat-compositor` (position:relative nele, bottom:100% aqui) — não um
+   número de px chutado a partir da viewport: assim se adapta sozinho à altura
+   real do compositor (textarea de 1 ou várias linhas, chip de anexo, erro) e
+   nunca fica por cima dele. Azul claro fixo (não é o --ok verde do resto do
+   app — pedido específico do usuário), com par claro/escuro pra não sumir em
+   nenhum tema. Tamanho reduzido (era grande demais) mas ainda dá pra tocar
+   com o trem balançando. */
+.lado-toggle {
+    position: absolute; bottom: calc(100% + 8px); z-index: 35;
+    width: 38px; height: 38px; border-radius: 50%; font-size: 1.05rem;
+    border: 2px solid #7cc3f5; background: #cfe9fc; color: #0b3d6b;
+    box-shadow: 0 2px 10px rgba(0,0,0,.18); cursor: pointer;
+}
+@media (prefers-color-scheme: dark) {
+    .lado-toggle { background: #123650; border-color: #2f6f9e; color: #cfe9fc; }
+}
+.lado-toggle.lado-direita { right: 10px; }
+.lado-toggle.lado-esquerda { left: 10px; }
+
+.resposta-flutuante {
+    /* acima do toggle (38px) + as duas folgas de 8px dele */
+    position: absolute; bottom: calc(100% + 54px); z-index: 35;
+    display: flex; flex-direction: column; gap: 6px;
+}
+.resposta-flutuante.lado-direita { right: 10px; align-items: flex-end; }
+.resposta-flutuante.lado-esquerda { left: 10px; align-items: flex-start; }
+.resposta-letra.flutuante {
+    width: 40px; height: 40px; border-radius: 50%; font-size: .95rem; font-weight: 700;
+    border: 2px solid #7cc3f5; background: #cfe9fc; color: #0b3d6b;
+    box-shadow: 0 2px 10px rgba(0,0,0,.18);
+}
+@media (prefers-color-scheme: dark) {
+    .resposta-letra.flutuante { background: #123650; border-color: #2f6f9e; color: #cfe9fc; }
+}
+.resposta-letra.flutuante:disabled { opacity: .5; }
+
+/* Ergonomia de uma mão só é coisa de celular — no computador tem mouse/
+   teclado, o botão de trocar de lado não faz sentido (pedido do usuário). O
+   seletor A-E continua disponível pelo popup 🎓 normalmente. */
+.modo-computador .lado-toggle, .modo-computador .resposta-flutuante { display: none; }
+.modo-computador .chat-msgs.reserva-lado { padding-left: 20px; padding-right: 20px; }

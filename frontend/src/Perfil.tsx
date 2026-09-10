@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { api, type AdminOverview, type CreditosResumo, type SaudeVPS, type Usuario, type UsuarioAdmin } from "./api"
+import { api, type AdminOverview, type CreditosResumo, type LimitesConfig, type Orcamento, type RecursoCatalogo, type SaudeVPS, type Usuario, type UsuarioAdmin } from "./api"
 
 const HIERARQUIA: Record<string, string> = {
     superadmin: "Administrador mestre",
@@ -113,10 +113,106 @@ export default function Perfil({
                         <div className="uso-item"><span className="uso-num">{ov ? ov.questoes : "…"}</span><span className="uso-rot">questões</span></div>
                     </div>
 
+                    <CardOrcamento />
+                    <CardLimites />
                     <ConcederCredito aoConcluir={aoRecarregarCreditos} />
                     <Campanhas aoConcluir={aoRecarregarCreditos} />
                 </div>
             )}
+        </div>
+    )
+}
+
+function usd(v: number) { return `US$ ${v.toFixed(2)}` }
+
+function CardOrcamento() {
+    const [o, setO] = useState<Orcamento | null>(null)
+    const [mensal, setMensal] = useState("")
+    const [diario, setDiario] = useState("")
+    const [msg, setMsg] = useState("")
+
+    async function carregar() {
+        const r = await api.adminOrcamento().catch(() => null)
+        setO(r)
+        if (r) { setMensal(String(r.orcamento_mensal_usd)); setDiario(String(r.orcamento_diario_usd)) }
+    }
+    useEffect(() => { void carregar() }, [])
+
+    async function salvar() {
+        setMsg("")
+        try {
+            const r = await api.salvarOrcamento(Number(mensal) || 0, diario ? Number(diario) : null)
+            setO(r); setMsg("Salvo.")
+        } catch (e) { setMsg(e instanceof Error ? e.message : "Falha ao salvar.") }
+    }
+
+    if (!o) return null
+    return (
+        <div className={`cartao orcamento ${o.diario_excedido ? "estourado" : ""}`}>
+            <div className="saude-cab">
+                <strong>Orçamento de IA (Together)</strong>
+                {o.diario_excedido && <span className="saude-badge critico">teto do dia atingido</span>}
+                <button className="link" onClick={carregar} title="Atualizar">↻</button>
+            </div>
+            <div className="uso-grade">
+                <div className="uso-item destaque"><span className="uso-num">{usd(o.gasto_hoje_usd)}</span><span className="uso-rot">gasto hoje ({o.pct_dia}% do dia)</span></div>
+                <div className="uso-item"><span className="uso-num">{usd(o.gasto_mes_usd)}</span><span className="uso-rot">gasto no mês ({o.pct_mes}%)</span></div>
+                <div className="uso-item"><span className="uso-num">{usd(o.projecao_mes_usd)}</span><span className="uso-rot">projeção do mês</span></div>
+                <div className="uso-item"><span className="uso-num">{usd(o.orcamento_diario_usd)}</span><span className="uso-rot">teto por dia</span></div>
+            </div>
+            <div className="grade-estat">
+                <label>Teto mensal (US$)<input value={mensal} onChange={(e) => setMensal(e.target.value)} inputMode="decimal" /></label>
+                <label>Teto diário (US$)<input value={diario} onChange={(e) => setDiario(e.target.value)} inputMode="decimal" placeholder="em branco = mensal ÷ 30" /></label>
+            </div>
+            <div className="linha-acoes"><button onClick={salvar}>Salvar</button>{msg && <span className="dica">{msg}</span>}</div>
+            <p className="dica">
+                Ao atingir o teto do dia, <b>as chamadas de IA pausam</b> até o dia seguinte (UTC) — vale para
+                todos, inclusive você, porque o custo é o mesmo. O gasto vem do uso real × preço da API.
+            </p>
+        </div>
+    )
+}
+
+function CardLimites() {
+    const [c, setC] = useState<LimitesConfig | null>(null)
+    const [sessao, setSessao] = useState("")
+    const [semana, setSemana] = useState("")
+    const [msg, setMsg] = useState("")
+
+    async function carregar() {
+        const r = await api.adminLimites().catch(() => null)
+        setC(r)
+        if (r) { setSessao(String(r.sessao_msgs)); setSemana(String(r.semana_msgs)) }
+    }
+    useEffect(() => { void carregar() }, [])
+
+    async function salvar() {
+        setMsg("")
+        try {
+            const r = await api.salvarLimites(Number(sessao) || 0, Number(semana) || 0)
+            setC(r); setMsg("Salvo.")
+        } catch (e) { setMsg(e instanceof Error ? e.message : "Falha ao salvar.") }
+    }
+
+    if (!c) return null
+    return (
+        <div className="cartao">
+            <div className="saude-cab"><strong>Limites de ritmo por usuário</strong></div>
+            <p className="dica">
+                No modelo do plataforma de estudo: a <b>sessão de {c.janela_sessao_h}h</b> começa na primeira mensagem
+                e expira {c.janela_sessao_h}h depois; a seguinte abre uma janela nova. A <b>semana</b> é
+                rolante de {c.janela_semana_d} dias. Conta todas as chamadas de IA da pessoa (chat, tutor,
+                gêmeas), não só o chat. <b>0 = sem limite.</b>
+            </p>
+            <div className="grade-estat">
+                <label>Mensagens por sessão de {c.janela_sessao_h}h<input value={sessao} onChange={(e) => setSessao(e.target.value)} inputMode="numeric" /></label>
+                <label>Mensagens por {c.janela_semana_d} dias<input value={semana} onChange={(e) => setSemana(e.target.value)} inputMode="numeric" /></label>
+            </div>
+            <div className="linha-acoes"><button onClick={salvar}>Salvar</button>{msg && <span className="dica">{msg}</span>}</div>
+            <p className="dica">
+                Você (administrador) não é limitado. O <b>vitalício continua sujeito</b>: ele não paga crédito,
+                mas não pode queimar o orçamento sem teto — é exatamente para isso que o limite existe.
+            </p>
         </div>
     )
 }
@@ -128,10 +224,15 @@ function ConcederCredito({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
     const [motivo, setMotivo] = useState("cortesia")
     const [msg, setMsg] = useState<string | null>(null)
     const [enviando, setEnviando] = useState(false)
+    const [catalogo, setCatalogo] = useState<RecursoCatalogo | null>(null)
+    const [recursoEscolhido, setRecursoEscolhido] = useState("")
+    const [limiteRecurso, setLimiteRecurso] = useState("5")
 
     async function carregar() { setUsuarios(await api.adminUsuarios().catch(() => [])) }
-    useEffect(() => { void carregar() }, [])
+    useEffect(() => { void carregar(); api.recursosCatalogo().then(setCatalogo).catch(() => setCatalogo(null)) }, [])
     const escolhido = usuarios.find((u) => u.email === email)
+    const chavesRecurso = Object.keys(catalogo ?? {})
+    useEffect(() => { if (!recursoEscolhido && chavesRecurso.length) setRecursoEscolhido(chavesRecurso[0]) }, [chavesRecurso, recursoEscolhido])
 
     async function doar() {
         if (!email) return
@@ -148,6 +249,16 @@ function ConcederCredito({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
         await api.adminVitalicio(escolhido.email, !escolhido.vitalicio)
         await carregar(); await aoConcluir()
     }
+    async function liberarRecurso() {
+        if (!escolhido || !recursoEscolhido) return
+        await api.concederRecurso(escolhido.email, recursoEscolhido, Number(limiteRecurso) || 1)
+        await carregar()
+    }
+    async function revogarRecurso(feature: string) {
+        if (!escolhido) return
+        await api.revogarRecurso(escolhido.email, feature)
+        await carregar()
+    }
 
     return (
         <div className="cartao">
@@ -157,7 +268,7 @@ function ConcederCredito({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
                     <select value={email} onChange={(e) => setEmail(e.target.value)}>
                         <option value="">— escolha —</option>
                         {usuarios.map((u) => (
-                            <option key={u.id} value={u.email}>{u.nome} · {u.saldo} cr{u.vitalicio ? " · vitalício" : ""}{u.role === "superadmin" ? " (você)" : ""}</option>
+                            <option key={u.id} value={u.email}>{u.nome} · {u.simulados} simulado(s) · {u.saldo} cr{u.vitalicio ? " · vitalício" : ""}{u.role === "superadmin" ? " (você)" : ""}</option>
                         ))}
                     </select>
                 </label>
@@ -178,6 +289,37 @@ function ConcederCredito({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
                 )}
             </div>
             {msg && <span className="dica"> {msg}</span>}
+
+            {escolhido && escolhido.role !== "superadmin" && (
+                <div className="recursos-bloco">
+                    <p className="dica" style={{ marginBottom: 4 }}>
+                        <b>Recursos restritos</b> — não é automático: cada um precisa ser liberado aqui, com um teto de
+                        uso por dia. O resto da comunidade não vê nada disso até você liberar.
+                    </p>
+                    {escolhido.recursos.length > 0 && (
+                        <ul className="lista-recursos">
+                            {escolhido.recursos.map((r) => (
+                                <li key={r.feature}>
+                                    <span>{r.nome}</span>
+                                    <span className="dica">{r.usado_hoje}/{r.limite_diario} hoje</span>
+                                    <button className="link" onClick={() => revogarRecurso(r.feature)}>revogar</button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    {chavesRecurso.length > 0 && (
+                        <div className="linha-acoes">
+                            <select value={recursoEscolhido} onChange={(e) => setRecursoEscolhido(e.target.value)}>
+                                {chavesRecurso.map((k) => <option key={k} value={k}>{catalogo?.[k].nome}</option>)}
+                            </select>
+                            <input type="number" min={1} style={{ width: 70 }} value={limiteRecurso}
+                                onChange={(e) => setLimiteRecurso(e.target.value)} title="Limite por dia" />
+                            <span className="dica">{catalogo?.[recursoEscolhido]?.unidade}</span>
+                            <button className="secundario" onClick={liberarRecurso}>Liberar</button>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     )
 }

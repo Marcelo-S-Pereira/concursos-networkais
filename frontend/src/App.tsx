@@ -6,8 +6,10 @@ import Estatisticas from "./Estatisticas"
 import Biblioteca from "./Biblioteca"
 import Revisao from "./Revisao"
 import Desempenho from "./Desempenho"
+import Chat from "./Chat"
 import Perfil from "./Perfil"
 import Pagamentos from "./Pagamentos"
+import Youtube from "./Youtube"
 import Acesso from "./Acesso"
 import { api, type CreditosResumo, type Usuario } from "./api"
 
@@ -24,10 +26,11 @@ export default function App() {
     return <Painel usuario={usuario} aoSair={() => setUsuario(null)} />
 }
 
-type Aba = "caderno" | "revisao" | "desempenho" | "perfil" | "cadastro" | "ia" | "estat" | "rag" | "pagamentos"
+type Aba = "caderno" | "chat" | "revisao" | "desempenho" | "perfil" | "cadastro" | "ia" | "estat" | "rag" | "pagamentos" | "youtube"
 
 const MENU: { aba: Aba; label: string; admin: boolean }[] = [
     { aba: "caderno", label: "Caderno de questões", admin: false },
+    { aba: "chat", label: "Chat de estudo", admin: false },
     { aba: "revisao", label: "Revisão", admin: false },
     { aba: "desempenho", label: "Desempenho", admin: false },
     { aba: "cadastro", label: "Cadastro de questões", admin: true },
@@ -35,6 +38,7 @@ const MENU: { aba: Aba; label: string; admin: boolean }[] = [
     { aba: "estat", label: "Estatísticas", admin: true },
     { aba: "rag", label: "Biblioteca", admin: true },
     { aba: "pagamentos", label: "Pagamentos", admin: true },
+    { aba: "youtube", label: "🎬 YouTube", admin: true },
 ]
 
 function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
@@ -59,13 +63,13 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
     }
 
     return (
-        <main className={`tela ${modo === "computador" ? "modo-computador" : "modo-celular"}`}>
+        <main className={`tela ${modo === "computador" ? "modo-computador" : "modo-celular"}${aba === "chat" ? " tela-chat" : ""}`}>
             <header className="topo">
                 <div className="topo-esq">
                     <button className="hamburguer" aria-label="Abrir menu" onClick={() => setMenuAberto(true)}>☰</button>
                     <div>
-                        <h1>Simulado - Transpetro e Petrobrás</h1>
-                        <p className="sub">Simulados reais, tutor de IA e desempenho por questão — sua preparação inteligente para a aprovação.</p>
+                        <h1>Conlibrarie</h1>
+                        <p className="sub">Simulador</p>
                     </div>
                 </div>
                 <div className="topo-acoes">
@@ -100,6 +104,7 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
             </aside>
 
             {aba === "caderno" && <Caderno modo={modo} />}
+            {aba === "chat" && <Chat aoGastar={recarregarCreditos} />}
             {aba === "revisao" && <Revisao />}
             {aba === "desempenho" && <Desempenho />}
             {aba === "perfil" && <Perfil usuario={usuario} creditos={creditos} aoRecarregarCreditos={recarregarCreditos} />}
@@ -108,6 +113,7 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
             {aba === "estat" && admin && <Estatisticas />}
             {aba === "rag" && admin && <Biblioteca />}
             {aba === "pagamentos" && admin && <Pagamentos />}
+            {aba === "youtube" && admin && <Youtube />}
         </main>
     )
 }
