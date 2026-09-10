@@ -4,8 +4,9 @@ Revision ID: 0020_catalogo_local
 Revises: 0019_catalogo
 """
 
+from sqlalchemy import Boolean, Integer, String, column, table
+
 from alembic import op
-from sqlalchemy import table, column, String, Integer, Boolean
 
 revision = "0020_catalogo_local"
 down_revision = "0019_catalogo"

@@ -22,12 +22,14 @@ def registrar(
     unidades: int | None = None,
     tipo_unidade: str | None = None,
     erro: str | None = None,
+    user_id: int | None = None,
 ) -> None:
     try:
         usage = usage or {}
         db.add(
             AiCallLog(
                 connection_id=connection_id,
+                user_id=user_id,
                 categoria=categoria,
                 origem=origem,
                 modelo=modelo,

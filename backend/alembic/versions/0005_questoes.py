@@ -5,6 +5,7 @@ Revises: 0004_ai_registry
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0005_questoes"

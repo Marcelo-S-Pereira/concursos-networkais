@@ -5,8 +5,9 @@ Revises: 0012_ai_platforms
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 revision = "0013_exam_rules"
 down_revision = "0012_ai_platforms"

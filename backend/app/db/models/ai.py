@@ -98,6 +98,9 @@ class AiCallLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     connection_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # Quem provocou a chamada. Nullable: chamadas de script/manutenção não têm
+    # dono, e as antigas (anteriores à coluna) ficam sem — base dos limites por usuário.
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     categoria: Mapped[str] = mapped_column(String(20))
     origem: Mapped[str] = mapped_column(String(60))  # ponto de entrada (ex: tutor_explica)
     modelo: Mapped[str] = mapped_column(String(200))

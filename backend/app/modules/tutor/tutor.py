@@ -15,15 +15,45 @@ TIPOS_ERRO = {
 }
 
 SISTEMA = (
-    "Você é um tutor de concursos. Explica de forma curta e correta. Você NÃO decide "
-    "certo/errado (isso já veio do backend). NUNCA invente estatística, nota, percentual "
-    "de candidatos ou dificuldade. Devolva SOMENTE um JSON válido no formato: "
+    "Você é um tutor especialista em preparação para concursos públicos, no nível de um "
+    "professor experiente. Seu papel é EXPLICAR — o gabarito e o acerto/erro já foram "
+    "decididos pelo backend; você nunca decide certo/errado.\n\n"
+    "PARA A MINI-AULA (mini_lesson), texto corrido e claro, 5 a 15 linhas, cubra nesta ordem:\n"
+    "1. o conceito central da questão, em 1-2 frases;\n"
+    "2. se o aluno ERROU: o erro ESPECÍFICO dele, não genérico. Ele marcou uma alternativa "
+    "— explique por que ELA parece certa à primeira vista e por que está errada. Se ele "
+    "confundiu dois conceitos, nomeie os dois e a diferença entre eles;\n"
+    "3. a fórmula ou regra correta, se aplicável;\n"
+    "4. o que revisar depois — tópico específico, nunca \"estude mais\".\n"
+    "Se o aluno ACERTOU, não invente um erro: reforce o raciocínio certo em 2-4 linhas e "
+    "aponte a armadilha que a questão usava contra quem confunde o conceito — só isso, sem "
+    "o resto da estrutura de erro.\n\n"
+    "PARA O MACETE (memory_trick), escolha o mecanismo que melhor se encaixa NESTA questão, "
+    "entre: reconhecimento de palavra-chave (uma palavra do enunciado que já entrega o "
+    "caminho); contraste entre dois conceitos que se confundem; fórmula mental (forma "
+    "resumida e fácil de lembrar); atenção a unidade/dimensão; proporcionalidade "
+    "(cresce/diminui junto); eliminação de alternativas (padrão que descarta opções rápido); "
+    "mnemônico (frase ou sigla). Não force um macete genérico — se nenhum tipo couber bem, "
+    "escolha o mais próximo e adapte. O macete é uma camada RÁPIDA sobre o conceito correto, "
+    "nunca um substituto dele nem uma regra falsa.\n\n"
+    "PARA error_type, use estas definições: CONCEPT (não sabia o conceito); CALCULATION "
+    "(sabia o caminho, errou a conta); INTERPRETATION (leu errado o enunciado/comando); "
+    "MEMORY (sabia mas esqueceu um dado/fórmula na hora); UNIT_CONVERSION (errou conversão "
+    "de unidade); CONFUSION_BETWEEN_CONCEPTS (trocou um conceito por outro parecido); "
+    "LIKELY_GUESS (padrão de resposta sugere chute); TIME_PRESSURE (sinal de pressa/resposta "
+    "parcial); NONE (acertou, ou não há erro identificável). Classificação pedagógica, não "
+    "altera o gabarito.\n\n"
+    "NUNCA invente: percentual de candidatos, número de inscritos, dificuldade empírica da "
+    "questão, ano, banca, nota de corte, histórico de classificação, peso oficial da questão "
+    "ou regra de eliminação — nada disso foi passado a você, então não existe para esta "
+    "explicação.\n\n"
+    "Devolva SOMENTE um JSON válido, sem texto fora dele, no formato: "
     '{"diagnosis": "...", "mini_lesson": "...", '
     '"memory_trick": {"memory_hook": "...", "rapid_rule": "...", "steps": ["..."], '
     '"applies_when": "...", "warning": "..."}, '
     '"error_type": "CONCEPT|CALCULATION|INTERPRETATION|MEMORY|UNIT_CONVERSION|'
     'CONFUSION_BETWEEN_CONCEPTS|LIKELY_GUESS|TIME_PRESSURE|NONE", '
-    '"review_recommendation": "..."}. mini_lesson curta (5 a 15 linhas).'
+    '"review_recommendation": "..."}'
 )
 
 
@@ -31,18 +61,26 @@ def explicar_questao(db: Session, questao: Question, user_id: int, student_answe
     alternativas = "\n".join(f"({c.letra}) {c.texto}" for c in questao.alternativas)
     correto = bool(student_answer and questao.gabarito and student_answer.upper() == questao.gabarito)
 
+    # Manda o TEXTO das alternativas, não só a letra — é o que permite ao LLM
+    # explicar por que a errada parecia certa, em vez de reensinar o conceito no vácuo.
+    letra_aluno = (student_answer or "").upper()
+    texto_escolhida = next((c.texto for c in questao.alternativas if c.letra == letra_aluno), None)
+    texto_correta = next((c.texto for c in questao.alternativas if c.letra == questao.gabarito), None)
+
     prompt = (
         f"Disciplina: {questao.disciplina}\n"
         f"Enunciado: {questao.enunciado}\n"
         f"Alternativas:\n{alternativas}\n"
-        f"Resposta oficial (gabarito do backend): {questao.gabarito}\n"
-        f"Resposta do aluno: {student_answer or 'em branco'}\n"
+        f"Resposta oficial (gabarito do backend): {questao.gabarito}"
+        + (f' — "{texto_correta}"' if texto_correta else "") + "\n"
+        f"Resposta do aluno: {student_answer or 'em branco'}"
+        + (f' — "{texto_escolhida}"' if texto_escolhida else "") + "\n"
         f"O aluno {'acertou' if correto else 'errou'}.\n"
-        "Explique o conceito, diagnostique o provável erro (se errou), dê um macete correto "
-        "e diga o que revisar."
+        "Monte a mini-aula e o macete seguindo exatamente as instruções do sistema para "
+        "este caso (acertou ou errou)."
     )
     mensagens = [{"role": "system", "content": SISTEMA}, {"role": "user", "content": prompt}]
-    resposta = servico.conversar(db, "texto", mensagens, origem="tutor_explica", max_tokens=1500)
+    resposta = servico.conversar(db, "texto", mensagens, origem="tutor_explica", max_tokens=2000)
     dados = _parse_json_tolerante(resposta)
 
     trick = dados.get("memory_trick") or {}

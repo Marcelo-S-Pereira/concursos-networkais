@@ -5,6 +5,7 @@ Revises: 0010_tutor
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0011_enunciado_col2"

@@ -32,6 +32,77 @@ def overview(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)
     }
 
 
+@router.get("/orcamento")
+def orcamento(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.ai_registry.orcamento import estado
+    return estado(db)
+
+
+class OrcamentoIn(BaseModel):
+    mensal_usd: float
+    diario_usd: float | None = None
+
+
+@router.post("/orcamento")
+def salvar_orcamento(dados: OrcamentoIn, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.ai_registry.orcamento import estado
+    set_flag(db, "orcamento_mensal_usd", str(dados.mensal_usd))
+    set_flag(db, "orcamento_diario_usd", str(dados.diario_usd) if dados.diario_usd else "")
+    return estado(db)
+
+
+@router.get("/limites")
+def limites_uso(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Tetos rolantes de uso de IA por usuário (sessão de 5h e semana de 7 dias)."""
+    from app.modules.ai_registry.limites import limites_configurados
+    return limites_configurados(db)
+
+
+class LimitesIn(BaseModel):
+    sessao_msgs: int
+    semana_msgs: int
+
+
+@router.post("/limites")
+def salvar_limites(dados: LimitesIn, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.ai_registry.limites import limites_configurados
+    set_flag(db, "limite_sessao_msgs", str(max(0, dados.sessao_msgs)))
+    set_flag(db, "limite_semana_msgs", str(max(0, dados.semana_msgs)))
+    return limites_configurados(db)
+
+
+@router.get("/youtube")
+def youtube_config(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Estado da chave da YouTube Data API — nunca em claro, só mascarada."""
+    from app.modules.youtube.youtube import chave_mascarada, configurada
+    return {"configurada": configurada(db), "chave_mascarada": chave_mascarada(db)}
+
+
+class YoutubeIn(BaseModel):
+    chave: str
+
+
+@router.put("/youtube")
+def salvar_youtube(dados: YoutubeIn, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.youtube.youtube import chave_mascarada, salvar_chave
+    if not dados.chave.strip():
+        raise HTTPException(status_code=422, detail="Informe a chave da API.")
+    salvar_chave(db, dados.chave)
+    return {"configurada": True, "chave_mascarada": chave_mascarada(db)}
+
+
+@router.delete("/youtube", status_code=204)
+def apagar_youtube(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.youtube.youtube import apagar_chave
+    apagar_chave(db)
+
+
+@router.post("/youtube/testar")
+def testar_youtube(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.youtube.youtube import testar
+    return testar(db)
+
+
 @router.get("/saude")
 def saude(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     """Saúde da ambiente de execucao (carga/memória/disco/conexões) + se cadastros estão bloqueados."""
@@ -52,13 +123,84 @@ def alternar_cadastros(dados: BloqueioIn, _: User = Depends(apenas_superadmin), 
 
 @router.get("/usuarios")
 def usuarios(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
-    """Lista de usuários com o saldo de créditos (para o admin doar/ajustar)."""
+    """Lista de usuários com saldo, vitalício e recursos restritos concedidos —
+    ordenada por quem mais usa (simulados feitos) primeiro. É o começo do
+    ranking: falta indicação/referência, que ainda não existe no app."""
+    from app.modules.features.features import grants_do_usuario
+
     us = db.execute(select(User).order_by(User.nome)).scalars().all()
-    return [
-        {"id": u.id, "nome": u.nome, "email": u.email, "role": u.role,
-         "saldo": saldo(db, u.id), "vitalicio": u.vitalicio}
-        for u in us
-    ]
+    linhas = []
+    for u in us:
+        simulados = db.scalar(
+            select(func.count()).select_from(SimulationRun)
+            .where(SimulationRun.user_id == u.id, SimulationRun.status == "finished")
+        ) or 0
+        linhas.append({
+            "id": u.id, "nome": u.nome, "email": u.email, "role": u.role,
+            "saldo": saldo(db, u.id), "vitalicio": u.vitalicio,
+            "simulados": simulados, "recursos": grants_do_usuario(db, u.id),
+        })
+    linhas.sort(key=lambda x: x["simulados"], reverse=True)
+    return linhas
+
+
+@router.get("/recursos/catalogo")
+def recursos_catalogo(_: User = Depends(apenas_superadmin)):
+    from app.modules.features.features import RECURSOS
+    return RECURSOS
+
+
+class ConcederRecursoIn(BaseModel):
+    email: str
+    feature: str
+    limite_diario: int = 5
+
+
+@router.post("/recursos/conceder")
+def conceder_recurso(dados: ConcederRecursoIn, admin: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Libera um recurso restrito para um usuário, com o teto de uso por dia
+    que o admin escolhe — o resto da comunidade continua sem acesso."""
+    from app.modules.features.features import RECURSOS, conceder
+
+    if dados.feature not in RECURSOS:
+        raise HTTPException(status_code=422, detail="Recurso inválido.")
+    u = db.execute(select(User).where(User.email == dados.email.strip().lower())).scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    conceder(db, u.id, dados.feature, dados.limite_diario, admin.id)
+    return {"ok": True}
+
+
+class RevogarRecursoIn(BaseModel):
+    email: str
+    feature: str
+
+
+@router.post("/recursos/revogar")
+def revogar_recurso(dados: RevogarRecursoIn, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.features.features import revogar
+
+    u = db.execute(select(User).where(User.email == dados.email.strip().lower())).scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    revogar(db, u.id, dados.feature)
+    return {"ok": True}
+
+
+@router.get("/youtube/uso")
+def youtube_uso(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """Consumo real do pool do YouTube hoje — inclui o uso do próprio admin,
+    porque é a cota de verdade do Google sendo gasta, não só a da comunidade."""
+    from app.modules.features.features import RECURSOS, uso_total_hoje
+
+    buscas = uso_total_hoje(db, "youtube_videos")
+    custo = RECURSOS["youtube_videos"]["custo_unidade_api"]
+    unidades = buscas * custo
+    cota = 10_000
+    return {
+        "buscas_hoje": buscas, "unidades_hoje": unidades, "cota_diaria_unidades": cota,
+        "pct": round(unidades / cota * 100, 1) if cota else 0.0,
+    }
 
 
 class VitalicioIn(BaseModel):

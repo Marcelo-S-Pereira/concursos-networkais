@@ -5,6 +5,7 @@ Revises: 0009_modo_exibicao
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0010_tutor"

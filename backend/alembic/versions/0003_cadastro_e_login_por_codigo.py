@@ -8,6 +8,7 @@ Revises: 0002_usuarios
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0003_cadastro_e_login_por_codigo"

@@ -5,6 +5,7 @@ from app.api.v1 import (
     ai_admin,
     auth,
     catalogo,
+    chat,
     creditos,
     desempenho,
     edital,
@@ -33,3 +34,4 @@ api_router.include_router(desempenho.router, tags=["desempenho"])
 api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(pagamentos.router, tags=["pagamentos"])
 api_router.include_router(creditos.router, tags=["creditos"])
+api_router.include_router(chat.router, tags=["chat"])

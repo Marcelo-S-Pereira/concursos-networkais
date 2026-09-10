@@ -5,6 +5,7 @@ Revises: 0007_simulado
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0008_emphasis_stats"

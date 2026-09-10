@@ -36,6 +36,32 @@ def test_resolver_devolve_ativa(conexao_texto):
     assert [x.id for x in cadeia] == [c.id]
 
 
+def test_modelo_escolhido_vai_para_a_frente_da_cadeia(conexao_texto):
+    """O aluno escolhe a IA da conversa; a escolha entra na frente e o fallback
+    fica atrás. Escolha inválida é ignorada — o padrão da categoria atende."""
+    db, c = conexao_texto
+    outra = AiConnection(platform_id=c.platform_id, nome="Reserva", modelo="m2",
+                         categoria="texto", ativa=False, ordem_fallback=2)
+    db.add(outra)
+    db.commit()
+    db.refresh(outra)
+    resolver.invalidar_cache()
+    try:
+        cadeia = resolver.cadeia_para_categoria(db, "texto")
+        assert [x.id for x in cadeia] == [c.id, outra.id]
+        # escolher a reserva a traz para a frente, sem perder a outra
+        assert [x.id for x in servico._com_escolhida(db, cadeia, "texto", outra.id)] == [outra.id, c.id]
+        # id inexistente e id de outra categoria são ignorados
+        assert [x.id for x in servico._com_escolhida(db, cadeia, "texto", 999999)] == [c.id, outra.id]
+        assert [x.id for x in servico._com_escolhida(db, cadeia, "visao", c.id)] == [c.id, outra.id]
+        # sem escolha, nada muda
+        assert [x.id for x in servico._com_escolhida(db, cadeia, "texto", None)] == [c.id, outra.id]
+    finally:
+        db.query(AiConnection).filter(AiConnection.id == outra.id).delete()
+        db.commit()
+        resolver.invalidar_cache()
+
+
 def test_sem_conexao_erro_claro(conexao_texto):
     db, _ = conexao_texto
     with pytest.raises(servico.SemConexaoIA):

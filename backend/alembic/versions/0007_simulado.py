@@ -5,6 +5,7 @@ Revises: 0006_questao_pagina
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0007_simulado"

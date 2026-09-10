@@ -5,6 +5,7 @@ Revises: 0001_extensao_vector
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0002_usuarios"

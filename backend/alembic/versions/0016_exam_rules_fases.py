@@ -5,8 +5,9 @@ Revises: 0015_twin_questions
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 revision = "0016_exam_rules_fases"
 down_revision = "0015_twin_questions"

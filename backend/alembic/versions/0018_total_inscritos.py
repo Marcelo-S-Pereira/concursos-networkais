@@ -5,6 +5,7 @@ Revises: 0017_rag
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0018_total_inscritos"

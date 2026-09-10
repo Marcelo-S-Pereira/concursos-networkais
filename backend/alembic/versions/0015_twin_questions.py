@@ -5,8 +5,9 @@ Revises: 0014_review_schedule
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 revision = "0015_twin_questions"
 down_revision = "0014_review_schedule"

@@ -5,6 +5,7 @@ Revises: 0003_cadastro_e_login_por_codigo
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0004_ai_registry"

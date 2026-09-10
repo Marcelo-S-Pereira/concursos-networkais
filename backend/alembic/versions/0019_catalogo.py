@@ -5,6 +5,7 @@ Revises: 0018_total_inscritos
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0019_catalogo"

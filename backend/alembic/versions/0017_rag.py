@@ -6,6 +6,7 @@ Revises: 0016_exam_rules_fases
 
 import pgvector.sqlalchemy
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0017_rag"

@@ -5,6 +5,7 @@ Revises: 0013_exam_rules
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0014_review_schedule"
