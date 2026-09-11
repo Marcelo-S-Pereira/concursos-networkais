@@ -4,7 +4,9 @@ Consome crédito por mensagem (admin/vitalício livres) e respeita o guardrail d
 orçamento (imposto no motor de IA). O gabarito nunca é decidido pelo LLM.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+import math
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,7 +18,7 @@ from app.db.session import get_db
 from app.modules.ai_registry import limites
 from app.modules.ai_registry.cliente import AiCallError
 from app.modules.ai_registry.servico import SemConexaoIA
-from app.modules.chat.chat import responder
+from app.modules.chat.chat import responder, responder_e_falar, transcrever_pergunta
 from app.modules.creditos.carteira import creditar, saldo
 from app.modules.features import features
 from app.modules.youtube.youtube import YoutubeError
@@ -213,6 +215,69 @@ def enviar(cid: int, dados: MensagemIn, user: User = Depends(usuario_atual), db:
 
     return {
         "resposta": resposta,
+        "saldo": saldo(db, user.id),
+        "limites": limites.estado(db, user.id, isento=_isento(user)),
+    }
+
+
+MAX_AUDIO_BYTES = 15_000_000  # ~15 MB — generoso para uma pergunta falada
+
+
+@router.post("/conversas/{cid}/audio")
+async def enviar_audio(cid: int, file: UploadFile = File(...), question_id: int | None = Form(None),
+                       user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Chat por voz: grava→transcreve→responde→fala. Custo por TEMPO real (não
+    flat como o texto) — transcreve primeiro (barato, protegido pelo teto de
+    orçamento de qualquer forma), calcula o crédito pela duração REAL do
+    áudio, e só então chama LLM+TTS (bem mais caros) se houver saldo."""
+    c = db.get(Conversation, cid)
+    if not c or not _dono(c, user):
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=422, detail="Áudio vazio.")
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Áudio grande demais (máx. ~15 MB).")
+
+    if motivo := limites.bloqueio(db, user.id, isento=_isento(user)):
+        raise HTTPException(status_code=429, detail=motivo)
+
+    try:
+        transcricao = transcrever_pergunta(db, c, audio_bytes, file.filename or "audio.webm")
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except AiCallError as e:
+        raise HTTPException(status_code=502, detail=f"Transcrição falhou: {e}") from e
+
+    custo = 0
+    if user.role != "superadmin" and not user.vitalicio:
+        seg_por_credito = max(1, int(get_flag(db, "pag_creditos_chat_voz_seg_por_credito", "10")))
+        custo = max(1, math.ceil(transcricao["duracao_s"] / seg_por_credito))
+        if saldo(db, user.id) < custo:
+            raise HTTPException(status_code=402,
+                                detail="Créditos insuficientes para o chat por voz. Compre créditos no seu perfil.")
+
+    try:
+        resultado = responder_e_falar(db, c, transcricao["texto"], question_id)
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except AiCallError as e:
+        raise HTTPException(status_code=502, detail=f"IA falhou: {e}") from e
+
+    db.add(ChatMessage(conversation_id=cid, role="user", conteudo=transcricao["texto"], question_id=question_id))
+    db.add(ChatMessage(conversation_id=cid, role="assistant", conteudo=resultado["resposta"]))
+    if c.titulo == "Nova conversa":
+        c.titulo = transcricao["texto"][:60]
+    db.commit()
+
+    if custo:
+        creditar(db, user.id, -custo, "gasto_chat_voz", f"mensagem por voz ({transcricao['duracao_s']:.0f}s)")
+
+    return {
+        "transcricao": transcricao["texto"],
+        "resposta": resultado["resposta"],
+        "audio_b64": resultado["audio_b64"],
         "saldo": saldo(db, user.id),
         "limites": limites.estado(db, user.id, isento=_isento(user)),
     }

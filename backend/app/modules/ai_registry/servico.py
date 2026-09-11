@@ -9,6 +9,7 @@ import time
 
 from sqlalchemy.orm import Session
 
+from app.modules.ai_registry import cliente
 from app.modules.ai_registry.cliente import AiCallError, chamar_chat, chamar_embeddings
 from app.modules.ai_registry.resolver import cadeia_para_categoria
 from app.modules.ai_registry.uso import registrar
@@ -73,6 +74,68 @@ def conversar(db: Session, categoria: str, mensagens: list[dict], *, origem: str
             ultimo_erro = e  # tenta a próxima da cadeia de fallback, se houver
 
     raise ultimo_erro or SemConexaoIA(f"Todas as conexões de '{categoria}' falharam.")
+
+
+# Voz padrão por modelo, quando o chamador não escolhe uma — chave em minúsculo
+# do model id. Kokoro tem português do Brasil (pf_dora, feminina); os demais
+# entram conforme forem cadastrados.
+VOZES_PADRAO = {
+    "hexgrad/kokoro-82m": "pf_dora",
+}
+
+
+def transcrever_audio(db: Session, audio_bytes: bytes, nome_arquivo: str, *, origem: str,
+                       user_id: int | None = None, connection_id: int | None = None,
+                       idioma: str = "pt") -> dict:
+    """STT. Retorna {"texto": str, "duracao_s": float}."""
+    _checar_orcamento(db)
+    cadeia = _com_escolhida(db, cadeia_para_categoria(db, "transcricao"), "transcricao", connection_id)
+    if not cadeia:
+        raise SemConexaoIA("Nenhuma conexão de IA ativa para 'transcricao'. Cadastre uma.")
+
+    ultimo_erro: Exception | None = None
+    for conn in cadeia:
+        inicio = time.monotonic()
+        try:
+            resultado = cliente.transcrever(conn, audio_bytes, nome_arquivo, idioma=idioma)
+            registrar(db, connection_id=conn.id, categoria="transcricao", origem=origem, modelo=conn.modelo,
+                      sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000),
+                      unidades=int(resultado["duracao_s"]) or None, tipo_unidade="segundos", user_id=user_id)
+            return resultado
+        except AiCallError as e:
+            registrar(db, connection_id=conn.id, categoria="transcricao", origem=origem, modelo=conn.modelo,
+                      sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),
+                      user_id=user_id)
+            ultimo_erro = e
+
+    raise ultimo_erro or SemConexaoIA("Todas as conexões de 'transcricao' falharam.")
+
+
+def falar_texto(db: Session, texto: str, *, origem: str, user_id: int | None = None,
+                connection_id: int | None = None, voz: str | None = None) -> bytes:
+    """TTS. Retorna os bytes do áudio (mp3)."""
+    _checar_orcamento(db)
+    cadeia = _com_escolhida(db, cadeia_para_categoria(db, "voz"), "voz", connection_id)
+    if not cadeia:
+        raise SemConexaoIA("Nenhuma conexão de IA ativa para 'voz'. Cadastre uma.")
+
+    ultimo_erro: Exception | None = None
+    for conn in cadeia:
+        v = voz or VOZES_PADRAO.get((conn.modelo or "").lower(), "alloy")
+        inicio = time.monotonic()
+        try:
+            audio = cliente.falar(conn, texto, v)
+            registrar(db, connection_id=conn.id, categoria="voz", origem=origem, modelo=conn.modelo,
+                      sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000),
+                      unidades=len(texto), tipo_unidade="caracteres", user_id=user_id)
+            return audio
+        except AiCallError as e:
+            registrar(db, connection_id=conn.id, categoria="voz", origem=origem, modelo=conn.modelo,
+                      sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),
+                      user_id=user_id)
+            ultimo_erro = e
+
+    raise ultimo_erro or SemConexaoIA("Todas as conexões de 'voz' falharam.")
 
 
 def gerar_embeddings(db: Session, textos: list[str], *, origem: str, user_id: int | None = None) -> list[list[float]]:

@@ -106,6 +106,53 @@ def chamar_chat(
     return conteudo, usage
 
 
+def transcrever(conn: AiConnection, audio_bytes: bytes, nome_arquivo: str, *, idioma: str = "pt") -> dict:
+    """STT. Retorna {"texto": str, "duracao_s": float}. `response_format=verbose_json`
+    para vir a duração real (usada no custo em crédito, cobrado por tempo)."""
+    if conn.endpoint.startswith("local://"):
+        raise AiCallError(f'"{conn.nome}" é um modelo LOCAL — execução do motor local ainda não ligada.')
+    chave = decifrar_ia(conn.api_key_cifrada)
+    url = conn.endpoint.rstrip("/") + "/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {chave}"} if chave else {}
+    try:
+        resp = httpx.post(
+            url, headers=headers, files={"file": (nome_arquivo, audio_bytes)},
+            data={"model": conn.modelo, "language": idioma, "response_format": "verbose_json"},
+            timeout=TIMEOUT_S,
+        )
+    except httpx.TimeoutException as e:
+        raise AiCallError(f'"{conn.nome}" não respondeu em {int(TIMEOUT_S)}s.') from e
+    except httpx.HTTPError as e:
+        raise AiCallError(f'Falha ao conectar a "{conn.nome}": {e}') from e
+    if resp.status_code != 200:
+        raise AiCallError(f'"{conn.nome}" respondeu {resp.status_code}: {resp.text[:400]}')
+    data = resp.json()
+    texto = (data.get("text") or "").strip()
+    if not texto:
+        raise AiCallError(f'"{conn.nome}" não transcreveu nada (áudio vazio ou silencioso?).')
+    return {"texto": texto, "duracao_s": float(data.get("duration") or 0)}
+
+
+def falar(conn: AiConnection, texto: str, voz: str, *, formato: str = "mp3") -> bytes:
+    """TTS. Retorna os BYTES do áudio (a API devolve binário direto, não JSON)."""
+    if conn.endpoint.startswith("local://"):
+        raise AiCallError(f'"{conn.nome}" é um modelo LOCAL — execução do motor local ainda não ligada.')
+    chave = decifrar_ia(conn.api_key_cifrada)
+    url = conn.endpoint.rstrip("/") + "/audio/speech"
+    corpo = {"model": conn.modelo, "input": texto, "voice": voz, "response_format": formato, "stream": False}
+    try:
+        resp = httpx.post(url, headers=_headers(chave), json=corpo, timeout=TIMEOUT_S)
+    except httpx.TimeoutException as e:
+        raise AiCallError(f'"{conn.nome}" não respondeu em {int(TIMEOUT_S)}s.') from e
+    except httpx.HTTPError as e:
+        raise AiCallError(f'Falha ao conectar a "{conn.nome}": {e}') from e
+    if resp.status_code != 200:
+        raise AiCallError(f'"{conn.nome}" respondeu {resp.status_code}: {resp.text[:400]}')
+    if not resp.content:
+        raise AiCallError(f'"{conn.nome}" devolveu áudio vazio.')
+    return resp.content
+
+
 def chamar_embeddings(conn: AiConnection, textos: list[str]) -> tuple[list[list[float]], dict]:
     if conn.endpoint.startswith("local://"):
         raise AiCallError(f'"{conn.nome}" é um modelo LOCAL — execução do motor local ainda não ligada.')

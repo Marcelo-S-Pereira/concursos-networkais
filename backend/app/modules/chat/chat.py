@@ -132,3 +132,24 @@ def responder(db: Session, conversa: Conversation, texto_usuario: str,
     mensagens = [{"role": "system", "content": sistema}, *historico, {"role": "user", "content": texto_usuario}]
     return servico.conversar(db, "texto", mensagens, origem="chat_texto", max_tokens=1200,
                              user_id=conversa.user_id, connection_id=conversa.modelo_texto_id)
+
+
+def transcrever_pergunta(db: Session, conversa: Conversation, audio_bytes: bytes, nome_arquivo: str) -> dict:
+    """Só o STT — separado de responder_e_falar() para a rota poder checar o
+    crédito (cobrado por TEMPO real de fala) ANTES de gastar com LLM+TTS, que
+    são bem mais caros que a transcrição."""
+    return servico.transcrever_audio(
+        db, audio_bytes, nome_arquivo, origem="chat_stt", user_id=conversa.user_id,
+        connection_id=conversa.modelo_transcricao_id,
+    )
+
+
+def responder_e_falar(db: Session, conversa: Conversation, texto_usuario: str,
+                      question_id: int | None = None) -> dict:
+    """Responde pelo MESMO pipeline de texto (mesmo gate de gabarito, mesmo
+    ramo de visão quando a questão tem figura) e fala a resposta (TTS)."""
+    resposta = responder(db, conversa, texto_usuario, question_id)
+    audio_resposta = servico.falar_texto(
+        db, resposta, origem="chat_tts", user_id=conversa.user_id, connection_id=conversa.modelo_voz_id,
+    )
+    return {"resposta": resposta, "audio_b64": base64.b64encode(audio_resposta).decode()}
