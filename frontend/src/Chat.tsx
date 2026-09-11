@@ -96,8 +96,8 @@ type CampoModelo = "modelo_texto_id" | "modelo_visao_id" | "modelo_voz_id" | "mo
 const CATEGORIAS_IA: { campo: CampoModelo; rot: string; lista: keyof ModelosChat; ligado: boolean }[] = [
     { campo: "modelo_texto_id", rot: "Texto", lista: "texto", ligado: true },
     { campo: "modelo_visao_id", rot: "Imagem", lista: "visao", ligado: true },
-    { campo: "modelo_voz_id", rot: "Voz (fala a resposta)", lista: "voz", ligado: false },
-    { campo: "modelo_transcricao_id", rot: "Transcrição (ouve você)", lista: "transcricao", ligado: false },
+    { campo: "modelo_voz_id", rot: "Voz (fala a resposta)", lista: "voz", ligado: true },
+    { campo: "modelo_transcricao_id", rot: "Transcrição (ouve você)", lista: "transcricao", ligado: true },
 ]
 
 /** Popup ancorado no botão que o abriu — abre para cima, fecha ao clicar fora
@@ -123,8 +123,8 @@ function PopupIA({
                 <button className={`popup-linha ${!conversa.modo_voz ? "sel" : ""}`} onClick={() => onTrocarModo(false)}>
                     <span>💬 Texto</span>{!conversa.modo_voz && <span className="check">✓</span>}
                 </button>
-                <button className="popup-linha desligada" disabled>
-                    <span>🎙️ Voz</span><span className="popup-badge">em breve</span>
+                <button className={`popup-linha ${conversa.modo_voz ? "sel" : ""}`} onClick={() => onTrocarModo(true)}>
+                    <span>🎙️ Voz</span>{conversa.modo_voz && <span className="check">✓</span>}
                 </button>
             </div>
             {CATEGORIAS_IA.map((cat) => {
@@ -201,12 +201,12 @@ function PopupAcoes({
                     <span>⚡ Automático</span>{modoEstudo === "automatico" && <span className="check">✓</span>}
                 </button>
                 {modoEstudo === "automatico" && (
-                    <p className="popup-vazio">Depois que você responder, o resto do ciclo (mini-aula, macete, gêmeas e fechamento) segue sozinho.</p>
+                    <p className="popup-vazio">Depois que você responder, o app PERGUNTA se quer mini-aula, depois macete, depois gêmeas — um de cada vez. Nunca manda nada pra IA sem você confirmar.</p>
                 )}
             </div>
             <div className="popup-secao">
                 {!emFoco ? (
-                    <p className="popup-vazio">Escolha uma questão no painel à esquerda.</p>
+                    <p className="popup-vazio">Escolha uma questão embaixo do campo de mensagem.</p>
                 ) : gemeaAtual ? (
                     <>
                         <p className="popup-titulo">Sua resposta — questão gêmea</p>
@@ -284,6 +284,21 @@ async function capturarTela(): Promise<{ b64: string; erro: string | null }> {
     }
 }
 
+const TIPOS_AUDIO_PREF = ["audio/webm", "audio/mp4"]
+function tipoAudioSuportado(): string {
+    for (const t of TIPOS_AUDIO_PREF) if (MediaRecorder.isTypeSupported(t)) return t
+    return ""
+}
+
+/** Volume (RMS) do frame atual do microfone, 0..~1. É a base da detecção de
+ *  fala do mãos-livres — nível de som, não reconhecimento de voz de verdade. */
+function calcularRms(analiser: AnalyserNode, buffer: Float32Array<ArrayBuffer>): number {
+    analiser.getFloatTimeDomainData(buffer)
+    let soma = 0
+    for (let i = 0; i < buffer.length; i++) soma += buffer[i] * buffer[i]
+    return Math.sqrt(soma / buffer.length)
+}
+
 type EstadoMic = { count: number; erro: string | null } | null
 
 /** Checagem REAL de microfone via mediaDevices — nunca decorativa. Sem pedir
@@ -307,14 +322,33 @@ async function checarMicrofone(pedirPermissao: boolean): Promise<EstadoMic> {
     }
 }
 
-function PopupVoz({ mic, onVerificar }: { mic: EstadoMic; onVerificar: () => void }) {
+function PopupVoz({
+    mic, onVerificar, maosLivres, onAlternarMaosLivres,
+}: {
+    mic: EstadoMic
+    onVerificar: () => void
+    maosLivres: boolean
+    onAlternarMaosLivres: () => void
+}) {
     return (
         <Popup className="popup-voz" align="direita">
             <div className="popup-secao">
-                <p className="popup-titulo">Modo de voz</p>
-                <button className="popup-linha desligada" disabled>
-                    <span>🎙️ Falar e ouvir</span><span className="popup-badge">em breve</span>
+                <p className="popup-titulo">Mãos livres</p>
+                <button className={`popup-linha ${maosLivres ? "sel" : ""}`} onClick={onAlternarMaosLivres}>
+                    <span>🚗 {maosLivres ? "Desligar" : "Ligar"} — fica ouvindo, fala, envia e responde sozinho</span>
+                    {maosLivres && <span className="check">✓</span>}
                 </button>
+                <p className="popup-vazio">
+                    Como o modo de voz do ChatGPT: liga uma vez e conversa sem tocar na tela — bom pra usar no carro.
+                    Detecta pelo NÍVEL DE SOM quando você começa e para de falar (não é reconhecimento de voz de
+                    verdade); em lugar muito barulhento pode disparar sozinho ou demorar a perceber o silêncio. Se
+                    atrapalhar, desligue e use o botão de apertar-e-segurar abaixo.
+                </p>
+            </div>
+            <div className="popup-secao">
+                <p className="popup-titulo">Como gravar (manual)</p>
+                <p className="popup-vazio">Toque e segure o 🎤 no compositor para gravar sua pergunta; solte para
+                    enviar. O tutor ouve, responde e fala de volta.</p>
             </div>
             <div className="popup-secao">
                 <p className="popup-titulo">Microfone</p>
@@ -380,10 +414,14 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     const [gemeas, setGemeas] = useState<GemeaT[]>([])
     const [gemeaIdx, setGemeaIdx] = useState(-1)
     // Manual (padrão) ou Automático — no automático, depois de cada resposta
-    // REAL do aluno (nunca simulada), a sequência encadeia sozinha:
-    // correção → mini-aula → macete → gêmeas → fechamento. É rótulo por
-    // conversa, não persiste no banco (escolha de sessão).
+    // REAL do aluno (nunca simulada), o fluxo caminha sozinho pelas etapas
+    // (correção → mini-aula → macete → gêmeas → fechamento), mas SEMPRE
+    // PERGUNTA antes de cada uma (nunca dispara IA sem confirmação — bug
+    // relatado pelo usuário, corrigido no [097]). É rótulo por conversa, não
+    // persiste no banco (escolha de sessão).
     const [modoEstudo, setModoEstudo] = useState<"manual" | "automatico">("manual")
+    // Qual oferta está esperando "Sim"/"Pular" agora, no modo automático.
+    const [ofertaAutomatica, setOfertaAutomatica] = useState<"aula" | "macete" | "gemeas" | null>(null)
     // Pra montar o Fechamento no fim do ciclo: a letra que o aluno marcou na
     // principal + o resultado de cada gêmea, conforme confirmados pelo servidor.
     const [resultadosSessao, setResultadosSessao] = useState<{ letraPrincipal: string | null; gemeaOks: boolean[] }>({ letraPrincipal: null, gemeaOks: [] })
@@ -402,8 +440,47 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     }
     const [mic, setMic] = useState<EstadoMic>(null)
     const [recursos, setRecursos] = useState<Record<string, MeuRecurso>>({})
+    // Gravação: aperta e segura o 🎤 (pointer down/up — funciona com mouse e
+    // toque no mesmo handler), solta e envia. `gravSeg` só de exibição (não
+    // decide nada no servidor — o custo real vem da duração que a Together
+    // devolve na transcrição).
+    const [gravando, setGravando] = useState(false)
+    const [gravSeg, setGravSeg] = useState(0)
+    const [respondendoVoz, setRespondendoVoz] = useState(false)
+    const gravadorRef = useRef<MediaRecorder | null>(null)
+    const pedacosRef = useRef<Blob[]>([])
+    const gravCronRef = useRef<ReturnType<typeof setInterval> | null>(null)
+    const gravInicioRef = useRef<number | null>(null)
     const fim = useRef<HTMLDivElement>(null)
     const arquivo = useRef<HTMLInputElement>(null)
+    const audioRespostaRef = useRef<HTMLAudioElement | null>(null)
+
+    // Mãos livres ("como o modo de voz do ChatGPT"): liga uma vez, fica
+    // ouvindo, detecta quando o aluno fala (nível de som — Web Audio API, não
+    // reconhecimento de voz de verdade), grava, envia sozinho ao detectar
+    // silêncio, e volta a ouvir depois que a resposta falada termina. O botão
+    // de apertar-e-segurar continua existindo do lado, intacto.
+    const [maosLivres, setMaosLivres] = useState(false)
+    const [ouvindo, setOuvindo] = useState(false)
+    const streamMLRef = useRef<MediaStream | null>(null)
+    const ctxMLRef = useRef<AudioContext | null>(null)
+    const analiserMLRef = useRef<AnalyserNode | null>(null)
+    const bufferMLRef = useRef<Float32Array<ArrayBuffer> | null>(null)
+    const rafMLRef = useRef<number | null>(null)
+    const limiarMLRef = useRef(0.02)
+    const inicioFalaRef = useRef<number | null>(null)
+    const inicioSilencioRef = useRef<number | null>(null)
+    const maosLivresRef = useRef(false)   // o loop de RAF lê isto, não o state (fecharia sobre valor velho)
+    const pausarEscutaRef = useRef(false) // true enquanto processa/a resposta falada toca — nunca ouve o próprio áudio da IA
+
+    // Espelham o state em refs pro loop de RAF (que roda por minutos) nunca ler
+    // um valor velho de qual conversa/questão está ativa.
+    const ativaRef = useRef(ativa)
+    useEffect(() => { ativaRef.current = ativa }, [ativa])
+    const qidRef = useRef(qid)
+    useEffect(() => { qidRef.current = qid }, [qid])
+    const conversasRef = useRef(conversas)
+    useEffect(() => { conversasRef.current = conversas }, [conversas])
 
     async function carregarConversas() { setConversas(await api.chatConversas().catch(() => [])) }
     useEffect(() => {
@@ -424,7 +501,7 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     useEffect(() => { fim.current?.scrollIntoView({ behavior: "smooth" }) }, [msgs])
     // Trocar de questão no seletor encerra qualquer sequência de gêmeas em
     // andamento — elas pertencem à questão anterior, não fazem sentido soltas.
-    useEffect(() => { setGemeas([]); setGemeaIdx(-1); setResultadosSessao({ letraPrincipal: null, gemeaOks: [] }) }, [qid])
+    useEffect(() => { setGemeas([]); setGemeaIdx(-1); setResultadosSessao({ letraPrincipal: null, gemeaOks: [] }); setOfertaAutomatica(null) }, [qid])
 
     const conversa = conversas.find((c) => c.id === ativa) ?? null
     const emFoco = questoes.find((q) => q.id === qid) ?? null
@@ -485,6 +562,258 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
         if (mic == null) setMic(await checarMicrofone(false))
     }
 
+    /** Aperta o 🎤: pede o microfone de verdade (um stream NOVO, fechado ao
+     *  soltar) e começa a gravar. Erro real (sem microfone/permissão negada)
+     *  aparece na faixa de erro do chat, não fica escondido. */
+    async function iniciarGravacao() {
+        if (gravando || enviando || respondendoVoz || maosLivres || ativa == null) return
+        setErro(null)
+        let stream: MediaStream
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        } catch (e) {
+            const negada = e instanceof DOMException && e.name === "NotAllowedError"
+            setErro(negada ? "Permissão de microfone negada — habilite nas configurações do navegador."
+                : "Não foi possível acessar o microfone.")
+            return
+        }
+        const tipo = tipoAudioSuportado()
+        const gravador = tipo ? new MediaRecorder(stream, { mimeType: tipo }) : new MediaRecorder(stream)
+        pedacosRef.current = []
+        gravador.ondataavailable = (e) => { if (e.data.size > 0) pedacosRef.current.push(e.data) }
+        gravador.onstop = () => {
+            stream.getTracks().forEach((t) => t.stop())
+            const blob = new Blob(pedacosRef.current, { type: tipo || "audio/webm" })
+            pedacosRef.current = []
+            if (blob.size > 500) void enviarAudio(blob)  // ignora clique acidental (áudio quase vazio)
+        }
+        gravadorRef.current = gravador
+        gravador.start()
+        setGravando(true)
+        setGravSeg(0)
+        gravCronRef.current = setInterval(() => setGravSeg((s) => s + 1), 1000)
+    }
+
+    function pararGravacao() {
+        if (gravCronRef.current) { clearInterval(gravCronRef.current); gravCronRef.current = null }
+        if (gravadorRef.current && gravadorRef.current.state !== "inactive") gravadorRef.current.stop()
+        gravadorRef.current = null
+        setGravando(false)
+    }
+
+    /** Envia o áudio gravado: transcreve, responde, fala de volta — e toca a
+     *  resposta sozinha. Mesma lógica de erro/limites/saldo de `mandar()`, mas
+     *  sem devolver texto ao campo em erro (não havia texto, era fala). Lê
+     *  `ativa`/`qid`/`conversas` pelos REFS — chamada tanto pelo aperta-e-
+     *  segura (síncrono) quanto pelo mãos-livres (pode disparar minutos depois
+     *  de o componente ter renderizado de novo). Ao terminar — sucesso, erro
+     *  ou fim da fala tocada — devolve o controle pro mãos-livres continuar
+     *  ouvindo, se estiver ligado. */
+    async function enviarAudio(blob: Blob) {
+        const cid = ativaRef.current
+        if (cid == null) return
+        const eraNova = conversasRef.current.find((c) => c.id === cid)?.titulo === "Nova conversa"
+        const qidAtual = qidRef.current
+        setRespondendoVoz(true); setErro(null)
+
+        function devolverEscuta() {
+            pausarEscutaRef.current = false
+            if (maosLivresRef.current) setOuvindo(true)
+        }
+
+        try {
+            const r = await api.chatEnviarAudio(cid, blob, qidAtual === "" ? null : Number(qidAtual))
+            setMsgs((m) => [
+                ...m,
+                { role: "user", conteudo: r.transcricao, question_id: qidAtual === "" ? null : Number(qidAtual) },
+                { role: "assistant", conteudo: r.resposta, question_id: null },
+            ])
+            setLimites(r.limites)
+            if (eraNova) await api.chatEditarConversa(cid, { titulo: r.transcricao.slice(0, 60) }).catch(() => {})
+            await carregarConversas(); aoGastar?.()
+            const audioEl = audioRespostaRef.current
+            if (audioEl) {
+                audioEl.onended = devolverEscuta
+                audioEl.onerror = devolverEscuta
+                audioEl.src = `data:audio/mp3;base64,${r.audio_b64}`
+                await audioEl.play().catch(devolverEscuta)
+            } else {
+                devolverEscuta()
+            }
+        } catch (e) {
+            setErro(e instanceof Error ? e.message : "Falha no chat por voz.")
+            devolverEscuta()
+        } finally { setRespondendoVoz(false) }
+    }
+
+    /** Liga o mãos-livres: pede o microfone UMA vez (stream fica aberto
+     *  enquanto ligado, diferente do aperta-e-segura), calibra ~700ms de
+     *  ruído ambiente pro limiar de fala, e começa o loop de escuta. */
+    async function ativarMaosLivres() {
+        if (maosLivres || ativa == null) return
+        setErro(null)
+        let stream: MediaStream
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        } catch (e) {
+            const negada = e instanceof DOMException && e.name === "NotAllowedError"
+            setErro(negada ? "Permissão de microfone negada — habilite nas configurações do navegador."
+                : "Não foi possível acessar o microfone.")
+            return
+        }
+        if (typeof AudioContext === "undefined") {
+            stream.getTracks().forEach((t) => t.stop())
+            setErro("Este navegador não permite detectar fala automaticamente (sem Web Audio API). Use o botão de apertar-e-segurar.")
+            return
+        }
+        const ctx = new AudioContext()
+        const fonte = ctx.createMediaStreamSource(stream)
+        const analiser = ctx.createAnalyser()
+        analiser.fftSize = 1024
+        fonte.connect(analiser)
+        const buffer = new Float32Array(analiser.fftSize)
+
+        streamMLRef.current = stream
+        ctxMLRef.current = ctx
+        analiserMLRef.current = analiser
+        bufferMLRef.current = buffer
+        inicioFalaRef.current = null
+        inicioSilencioRef.current = null
+        pausarEscutaRef.current = false
+        maosLivresRef.current = true
+        setMaosLivres(true)
+        setVozAberta(false)
+
+        // calibra o ruído ambiente por ~700ms antes de começar a decidir nada
+        const amostras: number[] = []
+        const fim2 = performance.now() + 700
+        while (performance.now() < fim2) {
+            amostras.push(calcularRms(analiser, buffer))
+            await new Promise((r) => setTimeout(r, 40))
+        }
+        const media = amostras.reduce((a, b) => a + b, 0) / (amostras.length || 1)
+        limiarMLRef.current = Math.max(0.012, media + 0.018)
+
+        setOuvindo(true)
+        loopEscutaML()
+    }
+
+    function pararTudoML() {
+        if (rafMLRef.current != null) { cancelAnimationFrame(rafMLRef.current); rafMLRef.current = null }
+        if (gravCronRef.current) { clearInterval(gravCronRef.current); gravCronRef.current = null }
+        if (gravadorRef.current && gravadorRef.current.state !== "inactive") {
+            gravadorRef.current.onstop = null  // não dispara envio ao desligar no meio de uma gravação
+            gravadorRef.current.stop()
+        }
+        gravadorRef.current = null
+        streamMLRef.current?.getTracks().forEach((t) => t.stop())
+        streamMLRef.current = null
+        void ctxMLRef.current?.close().catch(() => {})
+        ctxMLRef.current = null
+        analiserMLRef.current = null
+        bufferMLRef.current = null
+        inicioFalaRef.current = null
+        inicioSilencioRef.current = null
+        gravInicioRef.current = null
+        pausarEscutaRef.current = false
+    }
+
+    function desativarMaosLivres() {
+        maosLivresRef.current = false
+        setMaosLivres(false)
+        setOuvindo(false)
+        setGravando(false)
+        pararTudoML()
+    }
+
+    function alternarMaosLivres() {
+        if (maosLivres) desativarMaosLivres()
+        else void ativarMaosLivres()
+    }
+
+    /** Começa a gravar no stream JÁ ABERTO do mãos-livres (sem pedir
+     *  permissão de novo) — reaproveita `gravadorRef`/`gravando`/`gravSeg`, a
+     *  mesma UI do aperta-e-segura já reage sozinha. */
+    function comecarGravarML() {
+        const stream = streamMLRef.current
+        if (!stream) return
+        const tipo = tipoAudioSuportado()
+        const gravador = tipo ? new MediaRecorder(stream, { mimeType: tipo }) : new MediaRecorder(stream)
+        pedacosRef.current = []
+        gravador.ondataavailable = (e) => { if (e.data.size > 0) pedacosRef.current.push(e.data) }
+        gravador.onstop = () => {
+            const blob = new Blob(pedacosRef.current, { type: tipo || "audio/webm" })
+            pedacosRef.current = []
+            gravadorRef.current = null
+            if (gravCronRef.current) { clearInterval(gravCronRef.current); gravCronRef.current = null }
+            gravInicioRef.current = null
+            setGravando(false)
+            if (blob.size > 500) {
+                pausarEscutaRef.current = true  // não escuta a própria resposta tocando (eco)
+                void enviarAudio(blob)
+            } else if (maosLivresRef.current) {
+                setOuvindo(true)  // blip — descarta e volta a ouvir direto
+            }
+        }
+        gravadorRef.current = gravador
+        gravInicioRef.current = performance.now()
+        gravador.start()
+        setGravando(true)
+        setGravSeg(0)
+        gravCronRef.current = setInterval(() => setGravSeg((s) => s + 1), 1000)
+    }
+
+    const MAX_GRAVACAO_ML_MS = 25000
+    const MIN_FALA_MS = 220
+    const SILENCIO_PARA_ENVIAR_MS = 1100
+
+    /** Loop de detecção de fala (RAF, não setInterval — mais barato e some
+     *  sozinho se a aba perder foco). Roda por minutos: NUNCA lê state
+     *  diretamente, só refs, senão fecharia sobre valores velhos. */
+    function loopEscutaML() {
+        rafMLRef.current = requestAnimationFrame(loopEscutaML)
+        const analiser = analiserMLRef.current
+        const buffer = bufferMLRef.current
+        if (!analiser || !buffer || !maosLivresRef.current || pausarEscutaRef.current) return
+
+        const nivel = calcularRms(analiser, buffer)
+        const agora = performance.now()
+
+        if (!gravadorRef.current) {
+            // ouvindo: esperando o volume passar do limiar por tempo suficiente pra ser fala, não um blip
+            if (nivel > limiarMLRef.current) {
+                if (inicioFalaRef.current == null) inicioFalaRef.current = agora
+                if (agora - inicioFalaRef.current >= MIN_FALA_MS) {
+                    inicioFalaRef.current = null
+                    inicioSilencioRef.current = null
+                    setOuvindo(false)
+                    comecarGravarML()
+                }
+            } else {
+                inicioFalaRef.current = null
+            }
+            return
+        }
+
+        // gravando: esperando silêncio sustentado pra considerar que a fala terminou
+        if (nivel < limiarMLRef.current) {
+            if (inicioSilencioRef.current == null) inicioSilencioRef.current = agora
+            if (agora - inicioSilencioRef.current >= SILENCIO_PARA_ENVIAR_MS) {
+                inicioSilencioRef.current = null
+                pararGravacao()
+            }
+        } else {
+            inicioSilencioRef.current = null
+        }
+        if (gravInicioRef.current != null && agora - gravInicioRef.current >= MAX_GRAVACAO_ML_MS) {
+            pararGravacao()  // teto de segurança — ruído contínuo não trava gravando pra sempre
+        }
+    }
+
+    // Desliga tudo se o componente desmontar com o mãos-livres ligado (trocar
+    // de aba, sair do chat) — nunca deixa o microfone aberto sozinho.
+    useEffect(() => () => pararTudoML(), [])
+
     async function mandar(conteudo: string, comAnexo = true, titulo?: string) {
         if (!conteudo.trim() || ativa == null || enviando) return
         const cid = ativa
@@ -523,19 +852,44 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
         } finally { setEnviando(false) }
     }
 
-    /** Responde a principal e, no modo AUTOMÁTICO, encadeia sozinho o resto
-     *  do ciclo (mini-aula → macete → gêmeas → fechamento) — sem esperar mais
-     *  cliques. O aluno respondeu de verdade; a automação só evita cliques
-     *  repetidos, nunca simula uma resposta por ele. */
+    /** Responde a principal e, no modo AUTOMÁTICO, PERGUNTA se quer a
+     *  mini-aula — nunca dispara IA sem confirmação. O aluno respondeu de
+     *  verdade; a automação só caminha pelas etapas em ordem, sempre com
+     *  "Sim"/"Pular" antes de cada uma (bug relatado: antes disparava tudo
+     *  de uma vez, sem perguntar — corrigido). */
     async function responderPrincipal(q: Questao, letra: string) {
         setResultadosSessao((s) => ({ ...s, letraPrincipal: letra }))
         await mandar(`Minha resposta da Q${q.numero}: ${letra}`, false, `Q${q.numero} · resposta`)
-        if (modoEstudo !== "automatico") return
-        const aula = ACOES.find((a) => a.id === "aula")
-        const macete = ACOES.find((a) => a.id === "macete")
-        if (aula) await mandar(aula.prompt(q.numero), false, `Q${q.numero} · ${aula.curto}`)
-        if (macete) await mandar(macete.prompt(q.numero), false, `Q${q.numero} · ${macete.curto}`)
-        await iniciarGemeasPara(q)
+        if (modoEstudo === "automatico") setOfertaAutomatica("aula")
+    }
+
+    const OFERTAS_AUTO: Record<"aula" | "macete" | "gemeas", { pergunta: string; sim: string }> = {
+        aula: { pergunta: "Quer uma mini-aula deste conteúdo?", sim: "🎓 Sim, quero" },
+        macete: { pergunta: "Quer o macete desta questão?", sim: "💡 Sim, quero" },
+        gemeas: { pergunta: "Quer praticar com 2 questões gêmeas?", sim: "👯 Sim, quero" },
+    }
+
+    /** Aceita a oferta atual (manda a IA de verdade) e avança pra próxima
+     *  oferta — sempre uma pergunta por vez, nunca em lote. */
+    async function aceitarOferta(q: Questao) {
+        const oferta = ofertaAutomatica
+        setOfertaAutomatica(null)
+        if (oferta === "aula") {
+            const aula = ACOES.find((a) => a.id === "aula")
+            if (aula) await mandar(aula.prompt(q.numero), false, `Q${q.numero} · ${aula.curto}`)
+            setOfertaAutomatica("macete")
+        } else if (oferta === "macete") {
+            const macete = ACOES.find((a) => a.id === "macete")
+            if (macete) await mandar(macete.prompt(q.numero), false, `Q${q.numero} · ${macete.curto}`)
+            setOfertaAutomatica("gemeas")
+        } else if (oferta === "gemeas") {
+            await iniciarGemeasPara(q)  // o fechamento dispara sozinho ao fim das 2 gêmeas (já era assim)
+        }
+    }
+
+    /** Pula a oferta atual sem mandar nada pra IA, e oferece a próxima. */
+    function pularOferta() {
+        setOfertaAutomatica((atual) => atual === "aula" ? "macete" : atual === "macete" ? "gemeas" : null)
     }
 
     async function fecharCiclo(q: Questao, letraPrincipal: string, gemeaOks: boolean[]) {
@@ -613,24 +967,8 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                 <p className="chat-caderno">
                                     📗 {caderno ? `${caderno.orgao} · ${caderno.cargo}` : "Todos os cadernos"}
                                 </p>
-
-                                <label>Questão em estudo
-                                    <select value={qid} onChange={(e) => setQid(e.target.value === "" ? "" : Number(e.target.value))}
-                                        disabled={!questoes.length}>
-                                        <option value="">{questoes.length ? "— escolher —" : "sem caderno"}</option>
-                                        {questoes.map((q) => <option key={q.id} value={q.id}>Q{q.numero} · {q.disciplina}{q.tem_figura ? " 🖼" : ""}</option>)}
-                                    </select>
-                                </label>
-
-                                {emFoco && (
-                                    <div className="chat-foco">
-                                        <p className="chat-foco-enun">{semHtml(emFoco.pergunta || emFoco.enunciado).slice(0, 150) || "(sem enunciado)"}…</p>
-                                        {emFoco.tem_figura && <p className="chat-foco-fig">🖼 tem figura — a IA de imagem lê</p>}
-                                        <p className="chat-foco-status">
-                                            {respostaFoco ? `✓ você respondeu ${respostaFoco} — veja os recursos no botão 🎓` : "Abra o botão 🎓 e toque em \"Ler questão\" para ver o enunciado e responder."}
-                                        </p>
-                                    </div>
-                                )}
+                                <p className="popup-vazio">A questão em estudo agora se escolhe embaixo do campo de
+                                    mensagem, do lado da conversa.</p>
 
                                 {limites && <Ritmo l={limites} />}
                             </>
@@ -678,7 +1016,7 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                         <div className={`chat-msgs${mostrandoFlutuante ? ` reserva-lado lado-${ladoMao}` : ""}`}>
                             {!msgs.length && (
                                 <div className="chat-abertura">
-                                    <p>Escreva sua dúvida abaixo — ou escolha uma questão à esquerda e use os botões de estudo.</p>
+                                    <p>Escreva sua dúvida abaixo — ou escolha uma questão logo abaixo do campo de mensagem e use os botões de estudo.</p>
                                 </div>
                             )}
                             {msgs.map((m, i) => (
@@ -687,12 +1025,23 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                 </div>
                             ))}
                             {enviando && <div className="chat-msg assistant"><div className="chat-bolha pensando">pensando…</div></div>}
+                            {respondendoVoz && <div className="chat-msg assistant"><div className="chat-bolha pensando">ouvindo e respondendo…</div></div>}
                             <div ref={fim} />
                         </div>
 
                         {erro && <p className="falha chat-erro">{erro}</p>}
 
+                        {ofertaAutomatica && emFoco && (
+                            <div className="oferta-auto">
+                                <span>{OFERTAS_AUTO[ofertaAutomatica].pergunta}</span>
+                                <button onClick={() => aceitarOferta(emFoco)}>{OFERTAS_AUTO[ofertaAutomatica].sim}</button>
+                                <button className="secundario" onClick={pularOferta}>Pular</button>
+                            </div>
+                        )}
+
                         <div className="chat-compositor">
+                            {/* Toca sozinho a resposta falada quando o chat responde por voz. */}
+                            <audio ref={audioRespostaRef} hidden />
                             {/* Uma mão só, segurando a barra do trem — o polegar livre troca de
                                 lado. Ancorado no PRÓPRIO compositor (bottom:100% dele, não um
                                 número de px chutado) — se adapta sozinho à altura real dele,
@@ -720,8 +1069,25 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                 </div>
                             )}
                             <div className="chat-caixa">
+                                {maosLivres && (
+                                    <p className="maos-livres-tarja">
+                                        🚗 mãos livres ligado — {gravando ? `gravando (${gravSeg}s)…` : respondendoVoz ? "processando e respondendo…" : ouvindo ? "ouvindo, fale quando quiser…" : "ativo"}
+                                    </p>
+                                )}
+                                {conversa?.modo_voz && !maosLivres && (
+                                    <button
+                                        className={`voz-grande ${gravando ? "gravando" : ""}`}
+                                        disabled={respondendoVoz}
+                                        onPointerDown={(e) => { e.preventDefault(); void iniciarGravacao() }}
+                                        onPointerUp={pararGravacao}
+                                        onPointerLeave={() => { if (gravando) pararGravacao() }}
+                                        onPointerCancel={() => { if (gravando) pararGravacao() }}
+                                    >
+                                        {respondendoVoz ? "🎧 respondendo…" : gravando ? `⏹ solte para enviar (${gravSeg}s)` : "🎤 segure para falar"}
+                                    </button>
+                                )}
                                 <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={2}
-                                    placeholder={emFoco ? `Pergunte sobre a Q${emFoco.numero}…` : "Escreva sua pergunta…"}
+                                    placeholder={emFoco ? `Pergunte sobre a Q${emFoco.numero}…` : conversa?.modo_voz ? "…ou escreva aqui" : "Escreva sua pergunta…"}
                                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); mandar(texto) } }} />
                                 {anexo && <span className="chat-anexo">🖼 {anexo.nome}<button className="link" onClick={() => setAnexo(null)}>✕</button></span>}
                                 <div className="chat-botoes">
@@ -784,16 +1150,32 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                         </span>
                                     )}
 
-                                    <span className="popup-anchor">
-                                        <button className="icone-mic" onClick={abrirPopupVoz} title="Voz e microfone">
-                                            🎤<span className="chevron">⌄</span>
+                                    <span className={`mic-grupo ${maosLivres ? "maos-livres-ativo" : ""}`}>
+                                        <button
+                                            className={`icone-mic-rec ${gravando ? "gravando" : ""}`}
+                                            disabled={respondendoVoz || maosLivres}
+                                            title={maosLivres ? "Desligue o mãos-livres pra gravar assim" : gravando ? "Solte para enviar" : "Segure para gravar sua pergunta"}
+                                            onPointerDown={(e) => { e.preventDefault(); void iniciarGravacao() }}
+                                            onPointerUp={pararGravacao}
+                                            onPointerLeave={() => { if (gravando) pararGravacao() }}
+                                            onPointerCancel={() => { if (gravando) pararGravacao() }}
+                                        >
+                                            {maosLivres
+                                                ? (gravando ? `⏹ ${gravSeg}s` : respondendoVoz ? "🎧…" : ouvindo ? "🎙️ ouvindo" : "🚗")
+                                                : (respondendoVoz ? "…" : gravando ? `⏹ ${gravSeg}s` : "🎤")}
                                         </button>
-                                        {vozAberta && (
-                                            <>
-                                                <div className="popup-backdrop" onClick={() => setVozAberta(false)} />
-                                                <PopupVoz mic={mic} onVerificar={async () => setMic(await checarMicrofone(true))} />
-                                            </>
-                                        )}
+                                        <span className="popup-anchor">
+                                            <button className="icone-mic-chevron" onClick={abrirPopupVoz} title="Voz e microfone">
+                                                <span className="chevron">⌄</span>
+                                            </button>
+                                            {vozAberta && (
+                                                <>
+                                                    <div className="popup-backdrop" onClick={() => setVozAberta(false)} />
+                                                    <PopupVoz mic={mic} onVerificar={async () => setMic(await checarMicrofone(true))}
+                                                        maosLivres={maosLivres} onAlternarMaosLivres={alternarMaosLivres} />
+                                                </>
+                                            )}
+                                        </span>
                                     </span>
 
                                     <button className="chat-enviar" disabled={enviando || !texto.trim()} onClick={() => mandar(texto)}>
@@ -802,6 +1184,28 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Escolha da questão: do lado da IA, embaixo do campo de mensagem —
+                            não mais no painel de configurações à esquerda. */}
+                        {questoes.length > 0 && (
+                            <div className="chat-questao-picker">
+                                <label>Questão em estudo
+                                    <select value={qid} onChange={(e) => setQid(e.target.value === "" ? "" : Number(e.target.value))}>
+                                        <option value="">— escolher —</option>
+                                        {questoes.map((q) => <option key={q.id} value={q.id}>Q{q.numero} · {q.disciplina}{q.tem_figura ? " 🖼" : ""}</option>)}
+                                    </select>
+                                </label>
+                                {emFoco && (
+                                    <div className="chat-foco">
+                                        <p className="chat-foco-enun">{semHtml(emFoco.pergunta || emFoco.enunciado).slice(0, 150) || "(sem enunciado)"}…</p>
+                                        {emFoco.tem_figura && <p className="chat-foco-fig">🖼 tem figura — a IA de imagem lê</p>}
+                                        <p className="chat-foco-status">
+                                            {respostaFoco ? `✓ você respondeu ${respostaFoco} — veja os recursos no botão 🎓` : "Abra o botão 🎓 e toque em \"Ler questão\" para ver o enunciado e responder."}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </>
                 )}
             </section>

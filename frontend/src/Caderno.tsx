@@ -11,14 +11,16 @@ function rotuloMastery(m: string) { return MASTERY_ROTULO[m] ?? m.toLowerCase() 
 
 export default function Caderno({ modo }: { modo: "celular" | "computador" }) {
     const [exames, setExames] = useState<Exame[] | null>(null)
+    // Recolhido por padrão — nada abre sozinho, o usuário escolhe (pedido do
+    // usuário: antes o primeiro caderno abria sozinho).
     const [abertos, setAbertos] = useState<Set<number>>(new Set())
     const [jaAbertos, setJaAbertos] = useState<Set<number>>(new Set())  // já montados (mantém o estado do simulado ao recolher)
+    // Filtro por toggle: null = mostra todos os cadernos (recolhidos); um id =
+    // mostra só aquele (e já abre, é a intenção de escolher pra estudar nele).
+    const [filtroId, setFiltroId] = useState<number | null>(null)
 
     useEffect(() => {
-        api.exames().then((e) => {
-            setExames(e)
-            if (e.length) { setAbertos(new Set([e[0].id])); setJaAbertos(new Set([e[0].id])) }
-        }).catch(() => setExames([]))
+        api.exames().then(setExames).catch(() => setExames([]))
     }, [])
 
     function alternar(id: number) {
@@ -26,11 +28,27 @@ export default function Caderno({ modo }: { modo: "celular" | "computador" }) {
         setJaAbertos((s) => new Set(s).add(id))
     }
 
+    function escolherFiltro(id: number | null) {
+        setFiltroId(id)
+        if (id != null) { setAbertos(new Set([id])); setJaAbertos((s) => new Set(s).add(id)) }
+    }
+
     if (!exames) return <p className="neutro">Carregando…</p>
     if (!exames.length) return <p className="neutro">Nenhuma prova disponível ainda.</p>
+    const visiveis = filtroId == null ? exames : exames.filter((e) => e.id === filtroId)
     return (
         <div>
-            {exames.map((ex) => (
+            {exames.length > 1 && (
+                <div className="caderno-filtro" role="group" aria-label="Filtrar caderno">
+                    <button className={filtroId == null ? "sel" : ""} onClick={() => escolherFiltro(null)}>Todos</button>
+                    {exames.map((e) => (
+                        <button key={e.id} className={filtroId === e.id ? "sel" : ""} onClick={() => escolherFiltro(e.id)}>
+                            {e.orgao} · {e.cargo}
+                        </button>
+                    ))}
+                </div>
+            )}
+            {visiveis.map((ex) => (
                 <div key={ex.id} className={`caderno-linha ${abertos.has(ex.id) ? "aberto" : ""}`}>
                     <div className="caderno-cab" onClick={() => alternar(ex.id)}>
                         <span className="seta">{abertos.has(ex.id) ? "▾" : "▸"}</span>

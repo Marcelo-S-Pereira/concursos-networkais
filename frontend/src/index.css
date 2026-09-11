@@ -425,6 +425,12 @@ button.ia:hover { background: #5b21b6; }
 .topo-cadernos { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .topo-cadernos .explica { margin: 0; flex: 1; }
 .topo-cadernos .add { flex: 0 0 auto; }
+/* Filtro por toggle: escolher qual caderno ver no simulado, em vez de rolar a
+   lista inteira. "Todos" volta a mostrar todos recolhidos. */
+.caderno-filtro { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.caderno-filtro button { min-height: 0; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--borda);
+                         background: var(--cartao); color: var(--suave); font-size: .82rem; }
+.caderno-filtro button.sel { background: var(--texto); color: var(--cartao); border-color: var(--texto); }
 .caderno-linha { border: 1px solid var(--borda); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
 .caderno-linha.aberto { border-color: var(--texto); }
 .caderno-cab { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; background: var(--cartao); }
@@ -587,11 +593,22 @@ button.ia:hover { background: #5b21b6; }
 .chat-conv.ativa .link { color: var(--cartao); }
 .chat-conv-titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 
-/* Questão em foco + ações de estudo (moram na coluna, não na conversa) */
+/* Questão em foco + ações de estudo. */
 .chat-foco { border: 1px solid var(--borda); border-radius: 10px; padding: 9px; background: var(--fundo); }
 .chat-foco-enun { margin: 0 0 6px; font-size: .76rem; color: var(--suave); line-height: 1.45; }
 .chat-foco-fig { margin: 0 0 6px; font-size: .72rem; color: var(--suave); }
 .chat-foco-status { margin: 0; font-size: .72rem; color: var(--suave); }
+
+/* Escolha da questão do lado da conversa, embaixo do compositor. */
+.chat-questao-picker { padding: 10px 16px 14px; border-top: 1px solid var(--borda); display: grid; gap: 8px; }
+.chat-questao-picker > label { display: grid; gap: 4px; font-size: .76rem; color: var(--suave); max-width: 420px; margin: 0 auto; width: 100%; }
+.chat-questao-picker .chat-foco { max-width: 420px; margin: 0 auto; width: 100%; }
+
+/* Oferta do modo Automático: sempre pergunta, nunca dispara sozinho. */
+.oferta-auto { margin: 0 auto 8px; max-width: 420px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+              padding: 9px 12px; border-radius: 10px; border: 1px dashed var(--borda); background: var(--fundo); }
+.oferta-auto span { flex: 1; font-size: .82rem; }
+.oferta-auto button { min-height: 0; padding: 6px 12px; font-size: .78rem; }
 
 /* Popup único de recursos manuais (🎓): seletor A-E do gate + as 5 ações. */
 .popup-acoes { width: min(280px, 100%); }
@@ -661,10 +678,33 @@ button.ia:hover { background: #5b21b6; }
         color: var(--suave); font-size: .78rem; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; }
 .pill:hover { color: var(--texto); border-color: var(--texto); }
 .pill-modelo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.icone-mic { min-height: 0; padding: 5px 9px; border-radius: 20px; background: transparent; border: 1px solid var(--borda);
-             color: var(--suave); font-size: .95rem; display: inline-flex; align-items: center; gap: 3px; }
-.icone-mic:hover { color: var(--texto); border-color: var(--texto); }
 .chevron { font-size: .7rem; }
+
+/* Microfone: gravar (aperta e segura) + chevron separado (abre o diagnóstico
+   de microfone). Dois botões colados, não um só — segurar pra gravar não pode
+   também abrir popup. */
+.mic-grupo { display: inline-flex; align-items: stretch; border-radius: 20px; border: 1px solid var(--borda);
+             overflow: hidden; }
+.icone-mic-rec { min-height: 0; padding: 5px 10px; background: transparent; border: none; border-right: 1px solid var(--borda);
+                 color: var(--suave); font-size: .82rem; display: inline-flex; align-items: center; gap: 4px;
+                 touch-action: none; user-select: none; }
+.icone-mic-rec:hover:not(:disabled) { color: var(--texto); }
+.icone-mic-rec.gravando { background: var(--falha); color: #fff; animation: pulsar-grav 1s ease-in-out infinite; }
+.icone-mic-chevron { min-height: 0; padding: 5px 7px; background: transparent; border: none; color: var(--suave); }
+.icone-mic-chevron:hover { color: var(--texto); }
+@keyframes pulsar-grav { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+
+/* Modo de voz da conversa: botão grande acima do campo, pra liderar a tela
+   em vez do texto (o campo continua ali embaixo, pra quem preferir digitar). */
+.voz-grande { width: 100%; margin-bottom: 8px; padding: 14px; border-radius: 12px; border: 1px dashed var(--borda);
+              background: var(--fundo); color: var(--texto); font-size: .92rem; font-weight: 600;
+              touch-action: none; user-select: none; }
+.voz-grande:hover:not(:disabled) { border-color: var(--texto); }
+.voz-grande.gravando { background: var(--falha); color: #fff; border-style: solid; animation: pulsar-grav 1s ease-in-out infinite; }
+.voz-grande:disabled { opacity: .65; }
+.mic-grupo.maos-livres-ativo { border-color: var(--texto); }
+.maos-livres-tarja { width: 100%; margin: 0 0 8px; padding: 8px 12px; border-radius: 10px; border: 1px dashed var(--borda);
+                     background: var(--fundo); color: var(--suave); font-size: .8rem; text-align: center; }
 
 /* Popup ancorado na LINHA de botões (não no botão individual que o abre): a
    pill do modelo pode ficar no meio da linha (entre "+" e "🎤"/"Enviar"), e um

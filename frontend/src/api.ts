@@ -101,7 +101,7 @@ export type CreditosResumo = {
 }
 export type PlataformaPagamento = { id: number; titulo: string; provedor: string; public_key: string; ativa: boolean; token_mascarado: string }
 export type PlataformaPagamentoInput = { titulo: string; provedor: string; access_token: string; public_key: string }
-export type ConfigPagamento = { preco_reais: number; creditos_por_compra: number; creditos_por_simulado: number }
+export type ConfigPagamento = { preco_reais: number; creditos_por_compra: number; creditos_por_simulado: number; voz_segundos_por_credito: number }
 export type YoutubeStatus = { configurada: boolean; chave_mascarada: string | null }
 export type VideoResultado = { video_id: string; titulo: string; canal: string; miniatura: string; url: string }
 export type SaudeVPS = {
@@ -245,6 +245,14 @@ export const api = {
     chatEditarConversa: (cid: number, d: EditarConversaIn) =>
         pedir<Conversa>(`/chat/conversas/${cid}`, { method: "PATCH", body: JSON.stringify(d) }),
     chatEnviar: (cid: number, texto: string, question_id: number | null, imagem_b64?: string | null) => pedir<{ resposta: string; saldo: number; limites: LimitesUso }>(`/chat/conversas/${cid}/mensagem`, { method: "POST", body: JSON.stringify({ texto, question_id, imagem_b64: imagem_b64 ?? null }) }),
+    chatEnviarAudio: async (cid: number, blob: Blob, question_id: number | null) => {
+        const fd = new FormData()
+        fd.append("file", blob, "pergunta.webm")
+        if (question_id != null) fd.append("question_id", String(question_id))
+        const res = await fetch(`/api/v1/chat/conversas/${cid}/audio`, { method: "POST", credentials: "include", body: fd })
+        if (!res.ok) { const c = await res.json().catch(() => null); throw new Error(c?.detail ?? `Erro ${res.status}`) }
+        return res.json() as Promise<{ transcricao: string; resposta: string; audio_b64: string; saldo: number; limites: LimitesUso }>
+    },
     // Cartões impressos no chat sem IA — texto vem do servidor, nunca do cliente.
     chatLerQuestao: (cid: number, qid: number) => pedir<{ conteudo: string }>(`/chat/conversas/${cid}/questao/${qid}`, { method: "POST" }),
     chatLerGemea: (cid: number, twinId: number, ordem: "A" | "B") => pedir<{ conteudo: string }>(`/chat/conversas/${cid}/gemea/${twinId}?ordem=${ordem}`, { method: "POST" }),

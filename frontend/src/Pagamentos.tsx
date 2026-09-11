@@ -68,10 +68,14 @@ function ConfigValor({ inicial, aoSalvar }: { inicial: ConfigPagamento; aoSalvar
                     onChange={(e) => { setF({ ...f, creditos_por_compra: Number(e.target.value) }); setSalvo(false) }} /></label>
                 <label>Créditos por simulado<input type="number" value={f.creditos_por_simulado}
                     onChange={(e) => { setF({ ...f, creditos_por_simulado: Number(e.target.value) }); setSalvo(false) }} /></label>
+                <label>Chat por voz: segundos por crédito<input type="number" value={f.voz_segundos_por_credito}
+                    onChange={(e) => { setF({ ...f, voz_segundos_por_credito: Number(e.target.value) }); setSalvo(false) }} /></label>
             </div>
             <p className="dica">
                 Cada compra dá <b>{f.creditos_por_compra}</b> créditos por <b>R$ {f.preco_reais.toFixed(2)}</b>; cada simulado
-                consome <b>{f.creditos_por_simulado}</b> créditos ⇒ <b>R$ {porSimulado.toFixed(2)} por simulado</b>.
+                consome <b>{f.creditos_por_simulado}</b> créditos ⇒ <b>R$ {porSimulado.toFixed(2)} por simulado</b>. No chat
+                por voz, cada <b>{f.voz_segundos_por_credito}s</b> falados custam <b>1 crédito</b> (cobrado pelo tempo real
+                da pergunta, não por mensagem).
             </p>
             <button disabled={salvando} onClick={salvar}>{salvando ? "Salvando…" : "Salvar valor"}</button>
             {salvo && <span className="dica"> ✓ salvo</span>}
