@@ -24,7 +24,7 @@ export default function App() {
 
     if (carregando) return <main className="tela"><p className="neutro">Carregando…</p></main>
     if (!usuario) return <Acesso aoEntrar={setUsuario} />
-    return <Painel usuario={usuario} aoSair={() => setUsuario(null)} />
+    return <Painel usuario={usuario} aoSair={() => setUsuario(null)} aoAtualizarUsuario={setUsuario} />
 }
 
 type Aba = "caderno" | "chat" | "tutor_ia" | "revisao" | "desempenho" | "perfil" | "cadastro" | "ia" | "estat" | "rag" | "pagamentos" | "youtube"
@@ -43,7 +43,7 @@ const MENU: { aba: Aba; label: string; admin: boolean }[] = [
     { aba: "youtube", label: "🎬 YouTube", admin: true },
 ]
 
-function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
+function Painel({ usuario, aoSair, aoAtualizarUsuario }: { usuario: Usuario; aoSair: () => void; aoAtualizarUsuario: (u: Usuario) => void }) {
     const [aba, setAba] = useState<Aba>("caderno")
     const [menuAberto, setMenuAberto] = useState(false)
     const admin = usuario.role === "superadmin"
@@ -91,6 +91,10 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
                 </div>
             </header>
 
+            {!usuario.tem_senha && !usuario.senha_prompt_dispensado && (
+                <AvisoSenha usuario={usuario} aoAtualizarUsuario={aoAtualizarUsuario} aoIrPerfil={() => ir("perfil")} />
+            )}
+
             {menuAberto && <div className="menu-backdrop" onClick={() => setMenuAberto(false)} />}
             <aside className={`menu-lateral ${menuAberto ? "aberto" : ""}`} aria-hidden={!menuAberto}>
                 <div className="menu-cab">
@@ -110,7 +114,7 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
             {aba === "tutor_ia" && <TutorIA aoGastar={recarregarCreditos} />}
             {aba === "revisao" && <Revisao />}
             {aba === "desempenho" && <Desempenho />}
-            {aba === "perfil" && <Perfil usuario={usuario} creditos={creditos} aoRecarregarCreditos={recarregarCreditos} />}
+            {aba === "perfil" && <Perfil usuario={usuario} creditos={creditos} aoRecarregarCreditos={recarregarCreditos} aoAtualizarUsuario={aoAtualizarUsuario} />}
             {aba === "cadastro" && admin && <Cadastro />}
             {aba === "ia" && admin && <ConexoesIA />}
             {aba === "estat" && admin && <Estatisticas />}
@@ -118,5 +122,24 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
             {aba === "pagamentos" && admin && <Pagamentos />}
             {aba === "youtube" && admin && <Youtube />}
         </main>
+    )
+}
+
+/** [118]: convite dispensável pra cadastrar senha (login por senha é
+ * opcional, ao lado do código por e-mail). Some sozinho ao cadastrar OU ao
+ * clicar "agora não" — nos dois casos o servidor guarda a decisão
+ * (`tem_senha`/`senha_prompt_dispensado`), não insiste de novo. */
+function AvisoSenha({ usuario, aoAtualizarUsuario, aoIrPerfil }: {
+    usuario: Usuario; aoAtualizarUsuario: (u: Usuario) => void; aoIrPerfil: () => void
+}) {
+    async function dispensar() {
+        aoAtualizarUsuario(await api.dispensarPromptSenha().catch(() => ({ ...usuario, senha_prompt_dispensado: true })))
+    }
+    return (
+        <div className="aviso-senha">
+            <span>🔑 Cadastre uma senha para entrar mais rápido da próxima vez (opcional, o código por e-mail continua funcionando).</span>
+            <button className="secundario" onClick={aoIrPerfil}>Cadastrar senha</button>
+            <button className="link" onClick={dispensar}>Agora não</button>
+        </div>
     )
 }

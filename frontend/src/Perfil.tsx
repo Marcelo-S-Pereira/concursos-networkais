@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { api, type AdminOverview, type CreditosResumo, type EstadoHoje, type LimitesConfig, type Orcamento, type RecursoCatalogo, type ResumoSemana, type SaudeVPS, type Usuario, type UsuarioAdmin } from "./api"
+import CampoSecreto from "./CampoSecreto"
 
 const HIERARQUIA: Record<string, string> = {
     superadmin: "Administrador mestre",
@@ -60,11 +61,12 @@ function BarraSemana({ semana }: { semana: ResumoSemana }) {
 }
 
 export default function Perfil({
-    usuario, creditos, aoRecarregarCreditos,
+    usuario, creditos, aoRecarregarCreditos, aoAtualizarUsuario,
 }: {
     usuario: Usuario
     creditos: CreditosResumo | null
     aoRecarregarCreditos: () => Promise<void>
+    aoAtualizarUsuario: (u: Usuario) => void
 }) {
     const admin = usuario.role === "superadmin"
     const [ov, setOv] = useState<AdminOverview | null>(null)
@@ -93,6 +95,8 @@ export default function Perfil({
                     <div><span className="rot">Telefone</span> {usuario.telefone}</div>
                 </div>
             </div>
+
+            <CardSenha usuario={usuario} aoAtualizarUsuario={aoAtualizarUsuario} />
 
             {creditos && (
                 <div className="cartao">
@@ -178,6 +182,75 @@ export default function Perfil({
                     <Campanhas aoConcluir={aoRecarregarCreditos} />
                 </div>
             )}
+        </div>
+    )
+}
+
+/** [118]: senha de acesso — opcional, ao lado do código por e-mail (que
+ * continua sempre disponível como recuperação, sem rota própria). Serve pro
+ * admin e pro aluno, sem distinção de papel. */
+function CardSenha({ usuario, aoAtualizarUsuario }: { usuario: Usuario; aoAtualizarUsuario: (u: Usuario) => void }) {
+    const [aberto, setAberto] = useState(false)
+    const [senha, setSenha] = useState("")
+    const [confirmar, setConfirmar] = useState("")
+    const [erro, setErro] = useState<string | null>(null)
+    const [ok, setOk] = useState<string | null>(null)
+    const [enviando, setEnviando] = useState(false)
+
+    async function salvar() {
+        setErro(null); setOk(null)
+        if (senha.length < 8) { setErro("A senha precisa ter pelo menos 8 caracteres."); return }
+        if (senha !== confirmar) { setErro("As senhas não coincidem."); return }
+        setEnviando(true)
+        try {
+            const u = await api.cadastrarSenha(senha)
+            aoAtualizarUsuario(u)
+            setSenha(""); setConfirmar(""); setAberto(false)
+            setOk(usuario.tem_senha ? "Senha trocada." : "Senha cadastrada — já pode entrar com ela.")
+        } catch (e) {
+            setErro(e instanceof Error ? e.message : "Não foi possível salvar a senha.")
+        } finally { setEnviando(false) }
+    }
+
+    async function alternar(habilitada: boolean) {
+        setErro(null)
+        try { aoAtualizarUsuario(await api.alternarSenha(habilitada)) }
+        catch (e) { setErro(e instanceof Error ? e.message : "Não foi possível mudar isso agora.") }
+    }
+
+    return (
+        <div className="cartao">
+            <h3 style={{ margin: "0 0 8px" }}>Senha de acesso</h3>
+            <p className="dica">
+                Opcional, ao lado do código por e-mail (que continua sempre funcionando — inclusive pra
+                recuperar o acesso se você esquecer a senha).
+            </p>
+            {usuario.tem_senha && (
+                <label className="bloq-cadastros" style={{ margin: "6px 0" }}>
+                    <input type="checkbox" checked={usuario.senha_habilitada} onChange={(e) => alternar(e.target.checked)} />
+                    <span>Entrar com senha {usuario.senha_habilitada ? "— ligado ✓" : "— desligado"}</span>
+                </label>
+            )}
+            {!aberto ? (
+                <button className="secundario" onClick={() => setAberto(true)}>
+                    {usuario.tem_senha ? "Trocar senha" : "Cadastrar senha"}
+                </button>
+            ) : (
+                <div style={{ marginTop: 6 }}>
+                    <label>Nova senha (mín. 8 caracteres)
+                        <CampoSecreto valor={senha} aoMudar={setSenha} placeholder="••••••••" />
+                    </label>
+                    <label>Confirmar
+                        <CampoSecreto valor={confirmar} aoMudar={setConfirmar} placeholder="••••••••" />
+                    </label>
+                    {erro && <p className="falha" style={{ margin: "4px 0" }}>{erro}</p>}
+                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                        <button disabled={enviando} onClick={salvar}>{enviando ? "Salvando…" : "Salvar"}</button>
+                        <button className="secundario" onClick={() => { setAberto(false); setSenha(""); setConfirmar(""); setErro(null) }}>Cancelar</button>
+                    </div>
+                </div>
+            )}
+            {ok && <p className="dica" style={{ color: "var(--ok)", marginTop: 6 }}>{ok}</p>}
         </div>
     )
 }

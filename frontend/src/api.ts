@@ -7,6 +7,9 @@ export type Usuario = {
     cpf: string
     telefone: string
     role: string
+    tem_senha: boolean
+    senha_habilitada: boolean
+    senha_prompt_dispensado: boolean
 }
 
 // Campos declarados explicitamente: o TypeScript deste projeto roda com
@@ -385,6 +388,11 @@ export const api = {
         pedir<{ mensagem: string }>("/auth/login/solicitar", { method: "POST", body: JSON.stringify({ email }) }),
     verificarCodigo: (email: string, codigo: string) =>
         pedir<Usuario>("/auth/login/verificar", { method: "POST", body: JSON.stringify({ email, codigo }) }),
+    entrarComSenha: (email: string, senha: string) =>
+        pedir<Usuario>("/auth/login/senha", { method: "POST", body: JSON.stringify({ email, senha }) }),
+    cadastrarSenha: (senha: string) => pedir<Usuario>("/auth/senha/cadastrar", { method: "POST", body: JSON.stringify({ senha }) }),
+    alternarSenha: (habilitada: boolean) => pedir<Usuario>("/auth/senha/alternar", { method: "POST", body: JSON.stringify({ habilitada }) }),
+    dispensarPromptSenha: () => pedir<Usuario>("/auth/senha/dispensar-prompt", { method: "POST" }),
     logout: () => pedir<void>("/auth/logout", { method: "POST" }),
     health: () => pedir<Health>("/health"),
 }

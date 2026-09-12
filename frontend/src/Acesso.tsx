@@ -4,6 +4,7 @@ import { mascararCpf, mascararTelefone } from "./formatos"
 
 type Aba = "entrar" | "cadastrar"
 type Etapa = "email" | "codigo"
+type MetodoEntrar = "codigo" | "senha"
 
 export default function Acesso({ aoEntrar }: { aoEntrar: (u: Usuario) => void }) {
     const [aba, setAba] = useState<Aba>("entrar")
@@ -27,12 +28,62 @@ export default function Acesso({ aoEntrar }: { aoEntrar: (u: Usuario) => void })
 }
 
 function Entrar({ aoEntrar }: { aoEntrar: (u: Usuario) => void }) {
+    const [metodo, setMetodo] = useState<MetodoEntrar>("codigo")
     const [etapa, setEtapa] = useState<Etapa>("email")
     const [email, setEmail] = useState("")
     const [codigo, setCodigo] = useState("")
+    const [senha, setSenha] = useState("")
     const [aviso, setAviso] = useState<string | null>(null)
     const [erro, setErro] = useState<string | null>(null)
     const [enviando, setEnviando] = useState(false)
+
+    const seletorMetodo = (
+        <div className="abas abas-metodo" role="tablist">
+            <button type="button" role="tab" aria-selected={metodo === "codigo"} className={metodo === "codigo" ? "ativa" : ""}
+                onClick={() => { setMetodo("codigo"); setErro(null) }}>
+                Código por e-mail
+            </button>
+            <button type="button" role="tab" aria-selected={metodo === "senha"} className={metodo === "senha" ? "ativa" : ""}
+                onClick={() => { setMetodo("senha"); setErro(null) }}>
+                Senha
+            </button>
+        </div>
+    )
+
+    if (metodo === "senha") {
+        async function entrarComSenha(e: FormEvent) {
+            e.preventDefault()
+            setErro(null)
+            setEnviando(true)
+            try {
+                aoEntrar(await api.entrarComSenha(email, senha))
+            } catch (err) {
+                setErro(err instanceof Error ? err.message : "E-mail ou senha incorretos.")
+            } finally {
+                setEnviando(false)
+            }
+        }
+        return (
+            <>
+                {seletorMetodo}
+                <form className="cartao" onSubmit={entrarComSenha}>
+                    <label>
+                        E-mail
+                        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required autoFocus />
+                    </label>
+                    <label>
+                        Senha
+                        <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="current-password" required />
+                    </label>
+                    {erro && <p className="falha">{erro}</p>}
+                    <button type="submit" disabled={enviando}>{enviando ? "Entrando…" : "Entrar"}</button>
+                    <p className="explica" style={{ marginTop: 8 }}>
+                        Esqueceu a senha? <button type="button" className="link" onClick={() => { setMetodo("codigo"); setErro(null) }}>Entre pelo código por e-mail</button> — depois é só cadastrar uma senha nova no Perfil.
+                    </p>
+                </form>
+            </>
+        )
+    }
 
     async function pedirCodigo(e: FormEvent) {
         e.preventDefault()
@@ -64,15 +115,18 @@ function Entrar({ aoEntrar }: { aoEntrar: (u: Usuario) => void }) {
 
     if (etapa === "email") {
         return (
-            <form className="cartao" onSubmit={pedirCodigo}>
-                <p className="explica">Digite seu e-mail. Enviamos um código de acesso — não existe senha.</p>
-                <label>
-                    E-mail
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required autoFocus />
-                </label>
-                {erro && <p className="falha">{erro}</p>}
-                <button type="submit" disabled={enviando}>{enviando ? "Enviando…" : "Enviar código"}</button>
-            </form>
+            <>
+                {seletorMetodo}
+                <form className="cartao" onSubmit={pedirCodigo}>
+                    <p className="explica">Digite seu e-mail. Enviamos um código de acesso — vale também como recuperação, caso você tenha senha e esqueça.</p>
+                    <label>
+                        E-mail
+                        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required autoFocus />
+                    </label>
+                    {erro && <p className="falha">{erro}</p>}
+                    <button type="submit" disabled={enviando}>{enviando ? "Enviando…" : "Enviar código"}</button>
+                </form>
+            </>
         )
     }
 

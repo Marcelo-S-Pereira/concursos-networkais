@@ -78,6 +78,14 @@ h1 { font-size: 1.6rem; margin: 0 0 4px; }
     border: 1px solid var(--borda); padding: 10px;
 }
 .abas button.ativa { background: var(--cartao); color: var(--texto); border-color: var(--texto); }
+.abas-metodo { margin: 0 0 14px; }
+.abas-metodo button { padding: 8px; font-size: .85rem; }
+
+/* [118]: convite dispensável pra cadastrar senha, logo abaixo do topo. */
+.aviso-senha { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px;
+              background: var(--fundo); border-bottom: 1px solid var(--borda); font-size: .82rem; }
+.aviso-senha span { flex: 1; min-width: 200px; }
+.aviso-senha button { min-height: 0; padding: 6px 12px; font-size: .78rem; }
 
 /* Menu lateral (hambúrguer) */
 .topo-esq { display: flex; align-items: center; gap: 12px; }
