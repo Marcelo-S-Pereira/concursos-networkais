@@ -315,6 +315,8 @@ export const api = {
         pedir<{ id: number; titulo: string; descricao: string; chunk_count: number }>(
             "/tutor/documentos/video", { method: "POST", body: JSON.stringify({ url, conversation_id: conversationId }) },
         ),
+    tutorVideoInfo: (url: string) =>
+        pedir<{ titulo: string | null; duracao_s: number | null }>(`/tutor/video-info?url=${encodeURIComponent(url)}`),
     tutorEnviarVideoAudio: async (blob: Blob, url: string, conversationId: number | null) => {
         const fd = new FormData()
         fd.append("file", blob, "video.webm")

@@ -9,6 +9,21 @@ function extrairIdYoutube(url: string): string | null {
     return m ? m[1] : null
 }
 
+/** "9min 12s" / "1h 2min" — só pra mostrar a duração estimada do vídeo. */
+function fmtDuracao(total: number): string {
+    const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60
+    if (h > 0) return `${h}h ${m}min`
+    if (m > 0) return `${m}min ${s}s`
+    return `${s}s`
+}
+
+/** Durante a gravação: "Ns / duração total" se soubermos a duração real do
+ * vídeo (progresso de verdade); senão só o contador de segundos decorridos. */
+function fmtProgresso(decorridoS: number, totalS: number | null): string {
+    if (!totalS) return `${decorridoS}s`
+    return `${decorridoS}s / ${fmtDuracao(totalS)}`
+}
+
 /** Aba Tutor IA ([109]/[110]): especialista geral grounded na biblioteca RAG
  * classificada "Tutor IA" ([106]/[108]) — reaproveita 100% do pipeline de
  * crédito/voz/modelo do Chat de estudos (mesma tabela de conversa, só
@@ -35,6 +50,7 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
     const [enviandoVideo, setEnviandoVideo] = useState(false)
     const [gravandoVideo, setGravandoVideo] = useState(false)
     const [segVideo, setSegVideo] = useState(0)
+    const [infoVideo, setInfoVideo] = useState<{ titulo: string | null; duracao_s: number | null } | null>(null)
     const [enviandoArquivo, setEnviandoArquivo] = useState(false)
     const [conhecimentoAberto, setConhecimentoAberto] = useState(false)
     const [gravando, setGravando] = useState(false)
@@ -59,6 +75,15 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         checarMicrofone(false).then(setMic).catch(() => setMic(null))
     }, [])
     useEffect(() => { fimRef.current?.scrollIntoView({ behavior: "smooth" }) }, [msgs])
+    useEffect(() => {
+        if (!videoId) { setInfoVideo(null); return }
+        let vivo = true
+        const t = setTimeout(() => {
+            api.tutorVideoInfo(linkVideo).then((r) => { if (vivo) setInfoVideo(r) }).catch(() => { if (vivo) setInfoVideo(null) })
+        }, 300)
+        return () => { vivo = false; clearTimeout(t) }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [videoId])
 
     async function abrirConversa(cid: number) {
         setAtiva(cid); setErro(null); setAviso(null); setConhecimentoAberto(false)
@@ -286,9 +311,19 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
                                     <p className="dica" style={{ margin: "6px 0" }}>
                                         1) Aperte ▶ no vídeo acima. 2) Clique em "gravar áudio da aba" e, na janela
                                         que o navegador abrir, escolha <b>Esta guia</b> (ou aba) e marque
-                                        <b> "Compartilhar áudio da guia"</b>. 3) Quando o vídeo terminar (ou achar
-                                        que já basta), clique em parar. Funciona melhor no Chrome/Edge — alguns
+                                        <b> "Compartilhar áudio da guia"</b>. Funciona melhor no Chrome/Edge — alguns
                                         navegadores não suportam compartilhar áudio de aba.
+                                    </p>
+                                    <p className="dica" style={{ margin: "0 0 6px" }}>
+                                        {infoVideo?.duracao_s
+                                            ? `Duração do vídeo: ${fmtDuracao(infoVideo.duracao_s)} — a gravação leva
+                                               esse tempo, porque captura o áudio conforme o vídeo toca de verdade.`
+                                            : "A gravação leva o mesmo tempo da duração do vídeo (o áudio é capturado em tempo real, não é possível acelerar o processamento)."}
+                                        {" "}Você pode <b>trocar de aba ou usar outro app</b> enquanto grava — o
+                                        vídeo continua tocando e sendo gravado nesta aba em segundo plano, desde que
+                                        você não a feche nem pare o compartilhamento. Quando parar, o áudio é
+                                        transcrito (segundos, não minutos) e vira conhecimento do Tutor IA
+                                        automaticamente.
                                     </p>
                                     {!gravandoVideo ? (
                                         <button className="secundario" disabled={enviandoVideo} onClick={iniciarGravacaoVideo} style={{ width: "100%" }}>
@@ -296,7 +331,7 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
                                         </button>
                                     ) : (
                                         <button className="gravando-video" onClick={pararGravacaoVideo} style={{ width: "100%" }}>
-                                            ⏹ Parar e transcrever ({segVideo}s)
+                                            ⏹ Parar e transcrever ({fmtProgresso(segVideo, infoVideo?.duracao_s ?? null)})
                                         </button>
                                     )}
                                 </div>
