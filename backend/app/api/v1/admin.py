@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import apenas_superadmin
 from app.core.flags import cadastros_bloqueados, set_flag
 from app.core.saude import medir
-from app.db.models import Exam, Question, SimulationRun, User
+from app.db.models import CreditTransaction, Exam, Question, SimulationRun, User
 from app.db.session import get_db
 from app.modules.creditos.carteira import creditar, creditar_lote, saldo
 
@@ -125,20 +125,43 @@ def alternar_cadastros(dados: BloqueioIn, _: User = Depends(apenas_superadmin), 
 def usuarios(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     """Lista de usuários com saldo, vitalício e recursos restritos concedidos —
     ordenada por quem mais usa (simulados feitos) primeiro. É o começo do
-    ranking: falta indicação/referência, que ainda não existe no app."""
+    ranking: falta indicação/referência, que ainda não existe no app.
+
+    Exclui o próprio superadmin ([104]) — ele é sempre `acesso_livre`, então
+    doar crédito ou alternar vitalício pra si mesmo não faz efeito nenhum
+    (nem aparece em lugar nenhum da tela dele), e listá-lo aqui só abre
+    espaço pro admin clicar em si mesmo por engano em vez do usuário certo.
+
+    `mesmo_cpf_dono` ([105]): compara só o `cpf_indice` (hash determinístico,
+    [013]) — o CPF em si nunca sai desta rota. `comprado`/`doado` somam o
+    ledger por tipo (compra vs bonus/ajuste) — hoje `comprado` é sempre 0
+    porque o checkout do Mercado Pago ([075]) nunca foi concluído."""
     from app.modules.features.features import grants_do_usuario
 
-    us = db.execute(select(User).order_by(User.nome)).scalars().all()
+    dono = db.execute(select(User).where(User.role == "superadmin")).scalar_one_or_none()
+    cpf_dono = dono.cpf_indice if dono else None
+    us = db.execute(select(User).where(User.role != "superadmin").order_by(User.nome)).scalars().all()
     linhas = []
     for u in us:
         simulados = db.scalar(
             select(func.count()).select_from(SimulationRun)
             .where(SimulationRun.user_id == u.id, SimulationRun.status == "finished")
         ) or 0
+        comprado = db.scalar(
+            select(func.coalesce(func.sum(CreditTransaction.delta), 0))
+            .where(CreditTransaction.user_id == u.id, CreditTransaction.tipo == "compra")
+        ) or 0
+        doado = db.scalar(
+            select(func.coalesce(func.sum(CreditTransaction.delta), 0))
+            .where(CreditTransaction.user_id == u.id, CreditTransaction.tipo.in_(("bonus", "ajuste")),
+                   CreditTransaction.delta > 0)
+        ) or 0
         linhas.append({
             "id": u.id, "nome": u.nome, "email": u.email, "role": u.role,
             "saldo": saldo(db, u.id), "vitalicio": u.vitalicio,
             "simulados": simulados, "recursos": grants_do_usuario(db, u.id),
+            "mesmo_cpf_dono": bool(cpf_dono) and u.cpf_indice == cpf_dono,
+            "comprado": comprado, "doado": doado,
         })
     linhas.sort(key=lambda x: x["simulados"], reverse=True)
     return linhas

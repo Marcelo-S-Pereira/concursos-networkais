@@ -85,8 +85,15 @@ def cadastrar(dados: CadastroIn, db: Session = Depends(get_db)) -> dict:
     if db.execute(select(User).where(User.email == email)).scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Este e-mail já está cadastrado. Faça login.")
 
+    # Regra normal: CPF é único. Exceção: o CPF do próprio dono (superadmin)
+    # pode abrir quantas contas ele quiser, para teste — só quem digita o CPF
+    # certo (o próprio dono) aciona isto; não é um CPF qualquer que passa a
+    # ser reutilizável. O e-mail continua único como sempre.
     indice = indice_deterministico(cpf, "cpf")
-    if db.execute(select(User).where(User.cpf_indice == indice)).scalar_one_or_none():
+    dono_do_cpf = db.execute(
+        select(User).where(User.cpf_indice == indice, User.role == "superadmin")
+    ).scalar_one_or_none()
+    if dono_do_cpf is None and db.execute(select(User).where(User.cpf_indice == indice)).scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Este CPF já está cadastrado.")
 
     # O primeiro cadastro do sistema é o dono.

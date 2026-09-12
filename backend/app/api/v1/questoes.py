@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import apenas_superadmin, usuario_atual
 from app.db.models import Choice, Exam, Question, User
 from app.db.session import get_db
+from app.modules.creditos import acesso_diario
 
 router = APIRouter(prefix="/exames")
 FIGURAS_DIR = Path(__file__).resolve().parents[3].parent / "uploads" / "figuras"
@@ -105,7 +106,13 @@ def listar_lixeira(_: User = Depends(apenas_superadmin), db: Session = Depends(g
 
 
 @router.get("/{exam_id}/questoes", response_model=list[QuestaoOut])
-def listar_questoes(exam_id: int, _: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+def listar_questoes(exam_id: int, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Lista as questões de UM caderno — é o que "abrir o acordeão" carrega.
+    Atrás da porta diária ([099]): ver quais cadernos existem (`listar_exames`)
+    é livre, mas expandir um caderno pra ler as questões já é "usar", e exige
+    crédito ([103])."""
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
     exam = db.get(Exam, exam_id)
     if not exam:
         raise HTTPException(status_code=404, detail="Prova não encontrada.")
@@ -203,10 +210,14 @@ class ResultadoOut(BaseModel):
 
 @router.post("/{exam_id}/corrigir", response_model=ResultadoOut)
 def corrigir_simulado(
-    exam_id: int, dados: RespostasIn, _: User = Depends(usuario_atual), db: Session = Depends(get_db)
+    exam_id: int, dados: RespostasIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)
 ):
     """Corrige o cartão-resposta contra o gabarito da base. Só aqui o resultado
-    aparece — durante o preenchimento o gabarito nunca é exposto."""
+    aparece — durante o preenchimento o gabarito nunca é exposto. Modo
+    treino/sem tempo — mesma porta diária do simulado cronometrado ([099]);
+    faltava aqui, achado no [103]."""
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
     exam = db.get(Exam, exam_id)
     if not exam:
         raise HTTPException(status_code=404, detail="Prova não encontrada.")
@@ -408,7 +419,10 @@ class ExplicarIn(BaseModel):
 @router.post("/questoes/{qid}/explicar")
 def explicar(qid: int, dados: ExplicarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Tutor IA: explica a questão (diagnóstico, mini-aula, macete). Só pedagogia;
-    o gabarito/correção já vêm do backend."""
+    o gabarito/correção já vêm do backend. Atrás da porta diária ([099]) —
+    chama a IA de verdade, faltava o gate aqui, achado no [103]."""
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
     from app.modules.ai_registry.cliente import AiCallError
     from app.modules.ai_registry.servico import SemConexaoIA
     from app.modules.tutor.tutor import explicar_questao
@@ -433,7 +447,10 @@ class GemeaOut(BaseModel):
 @router.post("/questoes/{qid}/gemeas", response_model=list[GemeaOut])
 def gerar_gemeas_rota(qid: int, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Gera 2 questões gêmeas (IA) para praticar o mesmo conceito. Gabarito não
-    é exposto aqui — o aluno responde primeiro."""
+    é exposto aqui — o aluno responde primeiro. Atrás da porta diária ([099]) —
+    chama a IA de verdade, faltava o gate aqui, achado no [103]."""
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
     from app.modules.ai_registry.cliente import AiCallError
     from app.modules.ai_registry.servico import SemConexaoIA
     from app.modules.tutor.gemeas import gerar_gemeas

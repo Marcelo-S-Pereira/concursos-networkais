@@ -1,14 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 
 class Conversation(Base):
-    """Uma conversa do chat de estudo. Pode estar ligada a um caderno (exam_id)
-    ou ser geral (None = todos os cadernos)."""
+    """Uma conversa do chat de estudo — ou do Tutor IA ([109]), que reaproveita
+    esta mesma tabela e o mesmo pipeline de crédito/voz/modelo, só mudando o
+    system prompt e o filtro de RAG (`modo`). Pode estar ligada a um caderno
+    (exam_id) ou ser geral (None = todos os cadernos, ou sem caderno no Tutor)."""
 
     __tablename__ = "conversations"
 
@@ -16,13 +18,19 @@ class Conversation(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     exam_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     titulo: Mapped[str] = mapped_column(String(200), default="Nova conversa")
+    # [109]: "chat" (tutor do caderno) | "tutor" (especialista geral, RAG uso=tutor).
+    modo: Mapped[str] = mapped_column(String(10), default="chat")
+    # [109]: só usado no modo "tutor" — tom da resposta, escolhido pelo usuário.
+    persona: Mapped[str] = mapped_column(String(10), default="professor")
+    # [110]: ids de RagDocument escolhidos pra grounding desta conversa
+    # (só modo "tutor"). Vazio = usa todos os uso_tutor=true (padrão de antes).
+    rag_doc_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
 
     # Qual IA atende esta conversa. None = deixa o motor resolver pela categoria
     # ativa (comportamento padrão); preenchido = o aluno escolheu.
     modelo_texto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     modelo_visao_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Voz (TTS) e transcrição (STT): a escolha já fica salva, mas o motor ainda
-    # não executa (cliente.py só fala /chat/completions e /embeddings).
+    # Voz (TTS) e transcrição (STT) — o motor executa de verdade desde o [095].
     modelo_voz_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     modelo_transcricao_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     modo_voz: Mapped[bool] = mapped_column(Boolean, default=False)

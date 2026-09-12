@@ -1,10 +1,9 @@
 """Chat de estudo: conversas e mensagens. Tutor especialista do caderno.
 
-Consome crédito por mensagem (admin/vitalício livres) e respeita o guardrail de
-orçamento (imposto no motor de IA). O gabarito nunca é decidido pelo LLM.
+Uso protegido pela porta de acesso diária ([099], admin/vitalício livres) e
+pelo guardrail de orçamento (imposto no motor de IA). O gabarito nunca é
+decidido pelo LLM.
 """
-
-import math
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -12,14 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import usuario_atual
-from app.core.flags import get_flag
-from app.db.models import ChatMessage, Conversation, User
+from app.db.models import ChatMessage, Conversation, RagDocument, User
 from app.db.session import get_db
 from app.modules.ai_registry import limites
 from app.modules.ai_registry.cliente import AiCallError
 from app.modules.ai_registry.servico import SemConexaoIA
 from app.modules.chat.chat import responder, responder_e_falar, transcrever_pergunta
-from app.modules.creditos.carteira import creditar, saldo
+from app.modules.creditos import acesso_diario
+from app.modules.creditos.carteira import saldo
 from app.modules.features import features
 from app.modules.youtube.youtube import YoutubeError
 from app.modules.youtube.youtube import buscar as buscar_videos
@@ -33,9 +32,16 @@ def _isento(user: User) -> bool:
     return user.role == "superadmin"
 
 
+MODOS_CONVERSA = ("chat", "tutor")  # [109]: "chat" = tutor do caderno; "tutor" = especialista geral (aba Tutor IA)
+PERSONAS = ("professor", "amigo")
+
+
 class NovaConversaIn(BaseModel):
     exam_id: int | None = None
     titulo: str = "Nova conversa"
+    modo: str = "chat"
+    persona: str = "professor"
+    rag_doc_ids: list[int] = []
     modelo_texto_id: int | None = None
     modelo_visao_id: int | None = None
     modelo_voz_id: int | None = None
@@ -47,6 +53,9 @@ class ConversaOut(BaseModel):
     id: int
     exam_id: int | None
     titulo: str
+    modo: str = "chat"
+    persona: str = "professor"
+    rag_doc_ids: list[int] = []
     modelo_texto_id: int | None = None
     modelo_visao_id: int | None = None
     modelo_voz_id: int | None = None
@@ -56,11 +65,23 @@ class ConversaOut(BaseModel):
 
 def _saida(c: Conversation) -> ConversaOut:
     return ConversaOut(
-        id=c.id, exam_id=c.exam_id, titulo=c.titulo,
+        id=c.id, exam_id=c.exam_id, titulo=c.titulo, modo=c.modo, persona=c.persona,
+        rag_doc_ids=list(c.rag_doc_ids or []),
         modelo_texto_id=c.modelo_texto_id, modelo_visao_id=c.modelo_visao_id,
         modelo_voz_id=c.modelo_voz_id, modelo_transcricao_id=c.modelo_transcricao_id,
         modo_voz=c.modo_voz,
     )
+
+
+def _rag_doc_ids_validos(db: Session, ids: list[int]) -> list[int]:
+    """[110]: nunca confia cegamente na lista que veio do cliente — só mantém
+    ids que existem de verdade e estão classificados uso_tutor=true."""
+    if not ids:
+        return []
+    validos = db.execute(
+        select(RagDocument.id).where(RagDocument.id.in_(ids), RagDocument.uso_tutor.is_(True))
+    ).scalars().all()
+    return list(validos)
 
 
 def _dono(conversa: Conversation, user: User) -> bool:
@@ -68,8 +89,15 @@ def _dono(conversa: Conversation, user: User) -> bool:
 
 
 @router.get("/conversas", response_model=list[ConversaOut])
-def listar(user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
-    q = select(Conversation).where(Conversation.user_id == user.id).order_by(Conversation.atualizado_em.desc())
+def listar(modo: str = "chat", user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """`modo` separa as conversas do Chat de estudos das do Tutor IA ([109]) —
+    mesma tabela, duas telas diferentes. Default "chat" preserva o comportamento
+    de sempre pra quem já usava o Chat de estudos."""
+    q = (
+        select(Conversation)
+        .where(Conversation.user_id == user.id, Conversation.modo == modo)
+        .order_by(Conversation.atualizado_em.desc())
+    )
     return [_saida(c) for c in db.execute(q).scalars()]
 
 
@@ -79,9 +107,8 @@ CATEGORIAS_CHAT = ("texto", "visao", "voz", "transcricao")
 @router.get("/modelos")
 def modelos_disponiveis(_: User = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Modelos que o aluno pode escolher, por categoria: texto, visão, voz
-    (TTS) e transcrição (STT). Só id/nome/modelo — endpoint e chave nunca saem
-    daqui. Voz e transcrição aparecem para SEREM ESCOLHIDAS, mesmo o motor
-    ainda não as executando (ver modo_voz)."""
+    (TTS) e transcrição (STT) — todas as 4 executadas de verdade desde o
+    [095]. Só id/nome/modelo — endpoint e chave nunca saem daqui."""
     from app.db.models import AiConnection
 
     saida: dict[str, list[dict]] = {c: [] for c in CATEGORIAS_CHAT}
@@ -99,7 +126,18 @@ def meus_limites(user: User = Depends(usuario_atual), db: Session = Depends(get_
 
 @router.post("/conversas", response_model=ConversaOut, status_code=201)
 def criar(dados: NovaConversaIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Criar a conversa já é "usar" o chat ([103]) — atrás da porta diária.
+    A lista de conversas existentes (`listar`) continua livre; quem já pagou
+    hoje não é cobrado de novo."""
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
+    if dados.modo not in MODOS_CONVERSA:
+        raise HTTPException(status_code=422, detail=f"modo inválido — use um de {MODOS_CONVERSA}")
+    if dados.persona not in PERSONAS:
+        raise HTTPException(status_code=422, detail=f"persona inválida — use uma de {PERSONAS}")
     c = Conversation(user_id=user.id, exam_id=dados.exam_id, titulo=dados.titulo.strip() or "Nova conversa",
+                     modo=dados.modo, persona=dados.persona,
+                     rag_doc_ids=_rag_doc_ids_validos(db, dados.rag_doc_ids),
                      modelo_texto_id=dados.modelo_texto_id, modelo_visao_id=dados.modelo_visao_id,
                      modelo_voz_id=dados.modelo_voz_id, modelo_transcricao_id=dados.modelo_transcricao_id,
                      modo_voz=dados.modo_voz)
@@ -111,6 +149,8 @@ def criar(dados: NovaConversaIn, user: User = Depends(usuario_atual), db: Sessio
 
 class EditarConversaIn(BaseModel):
     titulo: str | None = None
+    persona: str | None = None
+    rag_doc_ids: list[int] | None = None
     modelo_texto_id: int | None = None
     modelo_visao_id: int | None = None
     modelo_voz_id: int | None = None
@@ -130,6 +170,12 @@ def editar(cid: int, dados: EditarConversaIn, user: User = Depends(usuario_atual
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
     if dados.titulo is not None and dados.titulo.strip():
         c.titulo = dados.titulo.strip()[:200]
+    if dados.persona is not None:
+        if dados.persona not in PERSONAS:
+            raise HTTPException(status_code=422, detail=f"persona inválida — use uma de {PERSONAS}")
+        c.persona = dados.persona
+    if dados.rag_doc_ids is not None:
+        c.rag_doc_ids = _rag_doc_ids_validos(db, dados.rag_doc_ids)
     for campo in _CAMPOS_MODELO:
         valor = getattr(dados, campo)
         if valor is not None:
@@ -189,13 +235,9 @@ def enviar(cid: int, dados: MensagemIn, user: User = Depends(usuario_atual), db:
     if motivo := limites.bloqueio(db, user.id, isento=_isento(user)):
         raise HTTPException(status_code=429, detail=motivo)
 
-    # consumo de crédito (o dono e o vitalício não gastam)
-    custo = 0
-    if user.role != "superadmin" and not user.vitalicio:
-        custo = int(get_flag(db, "pag_creditos_chat", "1"))
-        if saldo(db, user.id) < custo:
-            raise HTTPException(status_code=402,
-                                detail="Créditos insuficientes para o chat. Compre créditos no seu perfil.")
+    # acesso diário (porta única — [099]): abre sozinho no 1º uso do dia
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
 
     try:
         resposta = responder(db, c, dados.texto.strip(), dados.question_id, dados.imagem_b64)
@@ -210,9 +252,6 @@ def enviar(cid: int, dados: MensagemIn, user: User = Depends(usuario_atual), db:
         c.titulo = dados.texto.strip()[:60]
     db.commit()
 
-    if custo:
-        creditar(db, user.id, -custo, "gasto_chat_texto", "mensagem do chat")
-
     return {
         "resposta": resposta,
         "saldo": saldo(db, user.id),
@@ -226,10 +265,9 @@ MAX_AUDIO_BYTES = 15_000_000  # ~15 MB — generoso para uma pergunta falada
 @router.post("/conversas/{cid}/audio")
 async def enviar_audio(cid: int, file: UploadFile = File(...), question_id: int | None = Form(None),
                        user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
-    """Chat por voz: grava→transcreve→responde→fala. Custo por TEMPO real (não
-    flat como o texto) — transcreve primeiro (barato, protegido pelo teto de
-    orçamento de qualquer forma), calcula o crédito pela duração REAL do
-    áudio, e só então chama LLM+TTS (bem mais caros) se houver saldo."""
+    """Chat por voz: grava→transcreve→responde→fala. Custo é a porta diária
+    ([099]) — checada ANTES até da transcrição, pra não gastar nada se o
+    aluno não tem acesso aberto hoje e não tem crédito pra abrir."""
     c = db.get(Conversation, cid)
     if not c or not _dono(c, user):
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
@@ -243,20 +281,15 @@ async def enviar_audio(cid: int, file: UploadFile = File(...), question_id: int 
     if motivo := limites.bloqueio(db, user.id, isento=_isento(user)):
         raise HTTPException(status_code=429, detail=motivo)
 
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
+
     try:
         transcricao = transcrever_pergunta(db, c, audio_bytes, file.filename or "audio.webm")
     except SemConexaoIA as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except AiCallError as e:
         raise HTTPException(status_code=502, detail=f"Transcrição falhou: {e}") from e
-
-    custo = 0
-    if user.role != "superadmin" and not user.vitalicio:
-        seg_por_credito = max(1, int(get_flag(db, "pag_creditos_chat_voz_seg_por_credito", "10")))
-        custo = max(1, math.ceil(transcricao["duracao_s"] / seg_por_credito))
-        if saldo(db, user.id) < custo:
-            raise HTTPException(status_code=402,
-                                detail="Créditos insuficientes para o chat por voz. Compre créditos no seu perfil.")
 
     try:
         resultado = responder_e_falar(db, c, transcricao["texto"], question_id)
@@ -270,9 +303,6 @@ async def enviar_audio(cid: int, file: UploadFile = File(...), question_id: int 
     if c.titulo == "Nova conversa":
         c.titulo = transcricao["texto"][:60]
     db.commit()
-
-    if custo:
-        creditar(db, user.id, -custo, "gasto_chat_voz", f"mensagem por voz ({transcricao['duracao_s']:.0f}s)")
 
     return {
         "transcricao": transcricao["texto"],

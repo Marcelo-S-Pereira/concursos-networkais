@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import usuario_atual
 from app.db.models import EmphasisPublicStat, Exam, ExamRules, SimulationAnswer, SimulationRun, User
 from app.db.session import get_db
+from app.modules.creditos import acesso_diario
 from app.modules.desempenho.mastery import por_enfase, rotulo_delta
 from app.modules.desempenho.mastery import tempo_por_enfase as calc_tempo_enfase
 from app.modules.desempenho.revisao import agendar_erro
@@ -53,6 +54,8 @@ class ResultadoOut(BaseModel):
 
 @router.post("/iniciar", response_model=RunOut)
 def iniciar(dados: IniciarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
     exam = db.get(Exam, dados.exam_id)
     if not exam:
         raise HTTPException(status_code=404, detail="Prova não encontrada.")

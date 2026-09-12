@@ -16,10 +16,13 @@ class User(Base):
     nome: Mapped[str] = mapped_column(String(160))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
 
-    # CPF cifrado (AES-256-GCM) + índice determinístico para o UNIQUE funcionar
-    # sem guardar o número em claro. Ver app/core/crypto.py.
+    # CPF cifrado (AES-256-GCM) + índice determinístico para localizar por CPF
+    # sem guardar o número em claro. Ver app/core/crypto.py. Não é UNIQUE no
+    # banco — a unicidade normal é aplicada em código (auth.py::cadastrar),
+    # com a exceção do CPF do próprio superadmin, que pode se repetir em
+    # várias contas para ele testar ([102]).
     cpf_cifrado: Mapped[str] = mapped_column(String(255))
-    cpf_indice: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    cpf_indice: Mapped[str] = mapped_column(String(64), index=True)
 
     telefone: Mapped[str] = mapped_column(String(20))
     role: Mapped[str] = mapped_column(String(32), default="aluno")

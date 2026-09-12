@@ -20,26 +20,24 @@ router = APIRouter(prefix="/pagamentos")
 
 PROVEDORES = {"mercadopago", "stripe", "efi", "asaas", "outro"}
 
-# valor fixo (modelo simples do usuário): R$10 = 100 créditos; 1 simulado = 100 créditos
+# valor fixo (modelo simples do usuário): R$10 = 155 créditos por mês.
+# Simulado/chat/tutor ficam atrás da porta de acesso diária ([099]) — o custo
+# do dia é DERIVADO daqui (pool ÷ dias do mês corrente), não configurado à
+# parte. `creditos_por_simulado`/`voz_segundos_por_credito` ficaram obsoletos
+# com a porta única e saíram do schema (mostrar campo editável que não faz
+# mais nada seria enganoso) — as chaves antigas no banco ficam órfãs, inofensivas.
 PAG_PRECO = "pag_preco_reais"
 PAG_CRED_COMPRA = "pag_creditos_compra"
-PAG_CRED_SIMULADO = "pag_creditos_simulado"
-# chat por voz cobra por TEMPO (não flat como texto/imagem) — N segundos = 1 crédito
-PAG_CRED_VOZ_SEG = "pag_creditos_chat_voz_seg_por_credito"
 
 
 class ConfigOut(BaseModel):
     preco_reais: float
     creditos_por_compra: int
-    creditos_por_simulado: int
-    voz_segundos_por_credito: int
 
 
 class ConfigIn(BaseModel):
     preco_reais: float = Field(gt=0)
     creditos_por_compra: int = Field(gt=0)
-    creditos_por_simulado: int = Field(gt=0)
-    voz_segundos_por_credito: int = Field(gt=0)
 
 
 class PlataformaIn(BaseModel):
@@ -73,9 +71,7 @@ def _saida(p: PaymentPlatform) -> PlataformaOut:
 def obter_config(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     return ConfigOut(
         preco_reais=float(get_flag(db, PAG_PRECO, "10")),
-        creditos_por_compra=int(get_flag(db, PAG_CRED_COMPRA, "100")),
-        creditos_por_simulado=int(get_flag(db, PAG_CRED_SIMULADO, "100")),
-        voz_segundos_por_credito=int(get_flag(db, PAG_CRED_VOZ_SEG, "10")),
+        creditos_por_compra=int(get_flag(db, PAG_CRED_COMPRA, "155")),
     )
 
 
@@ -83,8 +79,6 @@ def obter_config(_: User = Depends(apenas_superadmin), db: Session = Depends(get
 def salvar_config(dados: ConfigIn, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     set_flag(db, PAG_PRECO, str(dados.preco_reais))
     set_flag(db, PAG_CRED_COMPRA, str(dados.creditos_por_compra))
-    set_flag(db, PAG_CRED_SIMULADO, str(dados.creditos_por_simulado))
-    set_flag(db, PAG_CRED_VOZ_SEG, str(dados.voz_segundos_por_credito))
     return dados
 
 

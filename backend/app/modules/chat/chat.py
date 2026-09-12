@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ChatMessage, Conversation, Exam, Question
 from app.modules.ai_registry import servico
+from app.modules.rag.rag import contexto_biblioteca
 
 FIGURAS_DIR = Path(__file__).resolve().parents[3].parent / "uploads" / "figuras"
 
@@ -42,6 +43,35 @@ SISTEMA = (
     "gabarito — o backend é a autoridade; se não souber, diga que não sabe. Escreva em "
     "português do Brasil, claro e direto, sem enrolação."
 )
+
+# [109]: Tutor IA — especialista geral (não amarrado a um caderno de questões
+# oficial), grounded na biblioteca que o aluno mesmo escolheu (uso="tutor").
+SISTEMA_TUTOR = (
+    "Você é um TUTOR especialista no assunto que o aluno escolheu estudar. Não está "
+    "ligado a um caderno de questões oficial — está ligado ao conteúdo da biblioteca "
+    "(trechos de referência, quando houver). Explique cada detalhe com profundidade: o "
+    "conceito, a lógica por trás, exemplos práticos, e o que costuma confundir quem "
+    "estuda o assunto. Use os trechos de referência quando ajudarem a responder; se não "
+    "houver trecho relevante, responda com seu conhecimento geral e diga com clareza que "
+    "não há material específico da biblioteca sobre aquele ponto — nunca finja que tem.\n\n"
+    "VÍDEOS: você NÃO navega na internet e NÃO conhece links. Nunca invente URL nem "
+    "título de vídeo. Em vez disso, dê de 3 a 5 termos de busca, cada um em uma linha "
+    "própria começando exatamente com 'BUSCAR: ' — o aplicativo transforma cada linha "
+    "dessas em uma busca real de vídeos relevantes. Antes deles, diga em uma frase o que "
+    "o aluno deve procurar aprender.\n\n"
+    "Quando houver IMAGEM, use-a para explicar o que está desenhado. Escreva em "
+    "português do Brasil, claro e direto, sem enrolação."
+)
+PERSONA_TUTOR = {
+    "professor": (
+        "Trate o aluno com a didática de um professor — estruturado, preciso, "
+        "técnico quando o assunto exigir, mas sempre claro."
+    ),
+    "amigo": (
+        "Trate o aluno como um amigo que entende bem do assunto — tom leve e "
+        "direto, sem formalidade excessiva, sem perder a precisão do conteúdo."
+    ),
+}
 
 # Marcador que o front manda quando o aluno escolhe a resposta no seletor A-E da
 # questão em foco. Vira a fonte de verdade de "já respondeu" — derivado do próprio
@@ -110,7 +140,18 @@ def responder(db: Session, conversa: Conversation, texto_usuario: str,
     if m:
         respondidas[int(m.group(1))] = m.group(2).upper()
 
-    sistema = SISTEMA + "\n\nConteúdo do caderno:\n" + _contexto_caderno(db, conversa.exam_id, respondidas)
+    # [109]: modo "tutor" (aba Tutor IA) é especialista geral, grounded na
+    # biblioteca uso=tutor — sem caderno de questões oficial. Modo "chat"
+    # (padrão) segue como sempre: tutor do caderno, biblioteca uso=chat.
+    if conversa.modo == "tutor":
+        sistema = SISTEMA_TUTOR + "\n\n" + PERSONA_TUTOR.get(conversa.persona, PERSONA_TUTOR["professor"])
+        biblioteca = contexto_biblioteca(db, texto_usuario, uso="tutor", doc_ids=conversa.rag_doc_ids or None)
+    else:
+        sistema = SISTEMA + "\n\nConteúdo do caderno:\n" + _contexto_caderno(db, conversa.exam_id, respondidas)
+        biblioteca = contexto_biblioteca(db, texto_usuario, uso="chat")
+    # [108]: motor de biblioteca — best-effort, "" quando não há nada relevante.
+    if biblioteca:
+        sistema += "\n\n" + biblioteca
     historico = [
         {"role": m.role, "content": m.conteudo}
         for m in db.execute(
