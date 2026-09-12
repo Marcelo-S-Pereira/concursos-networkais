@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.models import LlmTeachingOutput, Question
 from app.modules.ai_registry import resolver, servico
 from app.modules.ingestion.transcricao_ia import _parse_json_tolerante
+from app.modules.rag.rag import contexto_biblioteca
 
 TIPOS_ERRO = {
     "CONCEPT", "CALCULATION", "INTERPRETATION", "MEMORY", "UNIT_CONVERSION",
@@ -79,7 +80,14 @@ def explicar_questao(db: Session, questao: Question, user_id: int, student_answe
         "Monte a mini-aula e o macete seguindo exatamente as instruções do sistema para "
         "este caso (acertou ou errou)."
     )
-    mensagens = [{"role": "system", "content": SISTEMA}, {"role": "user", "content": prompt}]
+    # [114]: material que o admin classificou pra "Simulado" na Biblioteca —
+    # só entra se ele mesmo marcou como pertinente; best-effort, nunca lança.
+    sistema = SISTEMA
+    biblioteca = contexto_biblioteca(db, f"{questao.disciplina} {questao.enunciado}", uso="simulado")
+    if biblioteca:
+        sistema += "\n\n" + biblioteca
+
+    mensagens = [{"role": "system", "content": sistema}, {"role": "user", "content": prompt}]
     resposta = servico.conversar(db, "texto", mensagens, origem="tutor_explica", max_tokens=2000)
     dados = _parse_json_tolerante(resposta)
 

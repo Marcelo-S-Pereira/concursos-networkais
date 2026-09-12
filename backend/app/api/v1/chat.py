@@ -7,7 +7,7 @@ decidido pelo LLM.
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import usuario_atual
@@ -34,13 +34,16 @@ def _isento(user: User) -> bool:
 
 MODOS_CONVERSA = ("chat", "tutor")  # [109]: "chat" = tutor do caderno; "tutor" = especialista geral (aba Tutor IA)
 PERSONAS = ("professor", "amigo")
+MODOS_QUESTAO = ("normal", "random")  # [115]: normal = aluno escolhe; random = backend sorteia
 
 
 class NovaConversaIn(BaseModel):
-    exam_id: int | None = None
+    exam_id: int | None = None  # retrocompatível — usar exam_ids daqui pra frente
+    exam_ids: list[int] = []
     titulo: str = "Nova conversa"
     modo: str = "chat"
     persona: str = "professor"
+    modo_questao: str = "normal"
     rag_doc_ids: list[int] = []
     modelo_texto_id: int | None = None
     modelo_visao_id: int | None = None
@@ -52,9 +55,11 @@ class NovaConversaIn(BaseModel):
 class ConversaOut(BaseModel):
     id: int
     exam_id: int | None
+    exam_ids: list[int] = []
     titulo: str
     modo: str = "chat"
     persona: str = "professor"
+    modo_questao: str = "normal"
     rag_doc_ids: list[int] = []
     modelo_texto_id: int | None = None
     modelo_visao_id: int | None = None
@@ -65,7 +70,8 @@ class ConversaOut(BaseModel):
 
 def _saida(c: Conversation) -> ConversaOut:
     return ConversaOut(
-        id=c.id, exam_id=c.exam_id, titulo=c.titulo, modo=c.modo, persona=c.persona,
+        id=c.id, exam_id=c.exam_id, exam_ids=list(c.exam_ids or []), titulo=c.titulo,
+        modo=c.modo, persona=c.persona, modo_questao=c.modo_questao,
         rag_doc_ids=list(c.rag_doc_ids or []),
         modelo_texto_id=c.modelo_texto_id, modelo_visao_id=c.modelo_visao_id,
         modelo_voz_id=c.modelo_voz_id, modelo_transcricao_id=c.modelo_transcricao_id,
@@ -73,14 +79,14 @@ def _saida(c: Conversation) -> ConversaOut:
     )
 
 
-def _rag_doc_ids_validos(db: Session, ids: list[int]) -> list[int]:
-    """[110]: nunca confia cegamente na lista que veio do cliente — só mantém
-    ids que existem de verdade e estão classificados uso_tutor=true."""
+def _rag_doc_ids_validos(db: Session, ids: list[int], modo: str) -> list[int]:
+    """[110]/[115]: nunca confia cegamente na lista que veio do cliente — só
+    mantém ids que existem de verdade e estão classificados pra este modo
+    (uso_chat no Chat de estudo, uso_tutor no Tutor IA)."""
     if not ids:
         return []
-    validos = db.execute(
-        select(RagDocument.id).where(RagDocument.id.in_(ids), RagDocument.uso_tutor.is_(True))
-    ).scalars().all()
+    coluna = RagDocument.uso_chat if modo == "chat" else RagDocument.uso_tutor
+    validos = db.execute(select(RagDocument.id).where(RagDocument.id.in_(ids), coluna.is_(True))).scalars().all()
     return list(validos)
 
 
@@ -118,6 +124,27 @@ def modelos_disponiveis(_: User = Depends(usuario_atual), db: Session = Depends(
     return saida
 
 
+class DocChatOut(BaseModel):
+    id: int
+    titulo: str
+    descricao: str
+    indexado: bool
+    tentativas_indexacao: int
+
+
+@router.get("/documentos-rag", response_model=list[DocChatOut])
+def documentos_rag(_: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """[115]: documentos classificados "Chat de estudos" (uso_chat=true) —
+    pra escolher como fonte de conhecimento extra numa conversa (paralelo a
+    `GET /tutor/documentos`, que é a mesma coisa pra uso_tutor)."""
+    docs = db.execute(select(RagDocument).where(RagDocument.uso_chat.is_(True)).order_by(RagDocument.id)).scalars()
+    return [
+        DocChatOut(id=d.id, titulo=d.titulo, descricao=d.descricao,
+                  indexado=d.indexado_em is not None, tentativas_indexacao=d.tentativas_indexacao)
+        for d in docs
+    ]
+
+
 @router.get("/limites")
 def meus_limites(user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Quanto resta na sessão de 5h e na semana — o aluno vê o próprio ritmo."""
@@ -135,9 +162,17 @@ def criar(dados: NovaConversaIn, user: User = Depends(usuario_atual), db: Sessio
         raise HTTPException(status_code=422, detail=f"modo inválido — use um de {MODOS_CONVERSA}")
     if dados.persona not in PERSONAS:
         raise HTTPException(status_code=422, detail=f"persona inválida — use uma de {PERSONAS}")
-    c = Conversation(user_id=user.id, exam_id=dados.exam_id, titulo=dados.titulo.strip() or "Nova conversa",
-                     modo=dados.modo, persona=dados.persona,
-                     rag_doc_ids=_rag_doc_ids_validos(db, dados.rag_doc_ids),
+    if dados.modo_questao not in MODOS_QUESTAO:
+        raise HTTPException(status_code=422, detail=f"modo_questao inválido — use um de {MODOS_QUESTAO}")
+    # [115]: exam_ids é a lista nova; exam_id singular continua aceito por
+    # retrocompatibilidade (vira [exam_id] se exam_ids não vier preenchido).
+    exam_ids = list(dados.exam_ids) if dados.exam_ids else ([dados.exam_id] if dados.exam_id else [])
+    if dados.modo_questao == "random" and not exam_ids:
+        raise HTTPException(status_code=422, detail="Modo aleatório precisa de pelo menos um caderno escolhido.")
+    c = Conversation(user_id=user.id, exam_id=exam_ids[0] if len(exam_ids) == 1 else None, exam_ids=exam_ids,
+                     titulo=dados.titulo.strip() or "Nova conversa",
+                     modo=dados.modo, persona=dados.persona, modo_questao=dados.modo_questao,
+                     rag_doc_ids=_rag_doc_ids_validos(db, dados.rag_doc_ids, dados.modo),
                      modelo_texto_id=dados.modelo_texto_id, modelo_visao_id=dados.modelo_visao_id,
                      modelo_voz_id=dados.modelo_voz_id, modelo_transcricao_id=dados.modelo_transcricao_id,
                      modo_voz=dados.modo_voz)
@@ -175,7 +210,7 @@ def editar(cid: int, dados: EditarConversaIn, user: User = Depends(usuario_atual
             raise HTTPException(status_code=422, detail=f"persona inválida — use uma de {PERSONAS}")
         c.persona = dados.persona
     if dados.rag_doc_ids is not None:
-        c.rag_doc_ids = _rag_doc_ids_validos(db, dados.rag_doc_ids)
+        c.rag_doc_ids = _rag_doc_ids_validos(db, dados.rag_doc_ids, c.modo)
     for campo in _CAMPOS_MODELO:
         valor = getattr(dados, campo)
         if valor is not None:
@@ -195,8 +230,11 @@ def mensagens(cid: int, user: User = Depends(usuario_atual), db: Session = Depen
     msgs = db.execute(
         select(ChatMessage).where(ChatMessage.conversation_id == cid).order_by(ChatMessage.id)
     ).scalars()
+    from app.modules.chat.chat import _exam_ids_efetivos
+
     return {
-        "id": c.id, "exam_id": c.exam_id, "titulo": c.titulo,
+        "id": c.id, "exam_id": c.exam_id, "exam_ids": _exam_ids_efetivos(c), "titulo": c.titulo,
+        "modo": c.modo, "modo_questao": c.modo_questao,
         "modelo_texto_id": c.modelo_texto_id, "modelo_visao_id": c.modelo_visao_id,
         "modelo_voz_id": c.modelo_voz_id, "modelo_transcricao_id": c.modelo_transcricao_id,
         "modo_voz": c.modo_voz,
@@ -365,6 +403,35 @@ def ler_questao(cid: int, qid: int, user: User = Depends(usuario_atual), db: Ses
     db.add(ChatMessage(conversation_id=cid, role="assistant", conteudo=texto, question_id=qid))
     db.commit()
     return {"conteudo": texto}
+
+
+@router.post("/conversas/{cid}/questao-aleatoria")
+def questao_aleatoria(cid: int, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """[115]: modo "random" — sorteia uma questão não descartada entre os
+    cadernos da conversa e imprime como o `ler_questao` de sempre (zero
+    custo de IA, leitura pura do banco)."""
+    from app.db.models import Question
+    from app.modules.chat.cartoes import texto_questao
+    from app.modules.chat.chat import _exam_ids_efetivos
+
+    c = db.get(Conversation, cid)
+    if not c or not _dono(c, user):
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    exam_ids = _exam_ids_efetivos(c)
+    if not exam_ids:
+        raise HTTPException(status_code=422, detail="Esta conversa não tem caderno escolhido para sortear.")
+    q = db.execute(
+        select(Question)
+        .where(Question.exam_id.in_(exam_ids), Question.descartada.is_(False))
+        .order_by(func.random())
+        .limit(1)
+    ).scalar_one_or_none()
+    if not q:
+        raise HTTPException(status_code=404, detail="Nenhuma questão disponível nesses cadernos.")
+    texto = texto_questao(q)
+    db.add(ChatMessage(conversation_id=cid, role="assistant", conteudo=texto, question_id=q.id))
+    db.commit()
+    return {"question_id": q.id, "conteudo": texto}
 
 
 @router.post("/conversas/{cid}/gemea/{twin_id}")

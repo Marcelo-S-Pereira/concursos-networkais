@@ -17,6 +17,13 @@ class Conversation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     exam_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # [115]: lista de cadernos (substitui exam_id pra conversas novas — o
+    # singular fica só por retrocompatibilidade de leitura das antigas).
+    # Vazio = sem caderno específico (mesmo comportamento de exam_id=None).
+    exam_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    # [115]: "normal" (aluno escolhe a questão) | "random" (backend sorteia
+    # entre os exam_ids da conversa).
+    modo_questao: Mapped[str] = mapped_column(String(10), default="normal")
     titulo: Mapped[str] = mapped_column(String(200), default="Nova conversa")
     # [109]: "chat" (tutor do caderno) | "tutor" (especialista geral, RAG uso=tutor).
     modo: Mapped[str] = mapped_column(String(10), default="chat")

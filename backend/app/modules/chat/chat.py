@@ -36,9 +36,13 @@ SISTEMA = (
     "- QUESTÕES GÊMEAS: questões novas que cobram a mesma habilidade em outro contexto.\n"
     "- VÍDEOS: você NÃO navega na internet e NÃO conhece links. Nunca invente URL nem "
     "título de vídeo. Em vez disso, dê de 3 a 5 termos de busca, cada um em uma linha "
-    "própria começando exatamente com 'BUSCAR: ' — o aplicativo transforma cada linha "
-    "dessas em uma busca real. Antes deles, diga em uma frase o que o aluno deve "
-    "procurar aprender.\n\n"
+    "própria começando exatamente com 'BUSCAR: '. O aluno quer entender A QUESTÃO E A "
+    "BANCA, não uma aula genérica do tema — cada termo deve combinar: a banca do caderno "
+    "(se aparecer no 'Conteúdo do caderno' abaixo), a disciplina/conceito exato da "
+    "questão, e uma palavra que aponte pra resolução de prova ('questão comentada', "
+    "'resolução comentada', 'prova comentada', 'gabarito comentado') — nunca só o tema "
+    "solto tipo 'aula de física'. O aplicativo transforma cada linha dessas em uma busca "
+    "real. Antes deles, diga em uma frase o que o aluno deve procurar aprender.\n\n"
     "Quando houver IMAGEM, use-a para explicar o que está desenhado. Nunca invente "
     "gabarito — o backend é a autoridade; se não souber, diga que não sabe. Escreva em "
     "português do Brasil, claro e direto, sem enrolação."
@@ -76,17 +80,32 @@ PERSONA_TUTOR = {
 # Marcador que o front manda quando o aluno escolhe a resposta no seletor A-E da
 # questão em foco. Vira a fonte de verdade de "já respondeu" — derivado do próprio
 # histórico da conversa, sem coluna nova no banco.
-_RE_RESPOSTA = re.compile(r"^Minha resposta da Q(\d+):\s*([A-E])\s*$", re.I)
+# [115]: prefixo "Q{exam_id}.{numero}" é opcional — só o front usa quando a
+# conversa tem MAIS de um caderno selecionado (número de questão pode colidir
+# entre cadernos diferentes); com um caderno só, "Q{numero}" continua igual a
+# sempre foi, sem quebrar histórico já persistido.
+_RE_RESPOSTA = re.compile(r"^Minha resposta da Q(?:(\d+)\.)?(\d+):\s*([A-E])\s*$", re.I)
 
 
 def _sem_html(t: str | None) -> str:
     return re.sub(r"<[^>]+>", " ", t or "").replace("&nbsp;", " ").strip()
 
 
-def _respondidas(db: Session, conversation_id: int) -> dict[int, str]:
-    """{número da questão: letra que o aluno marcou} — só as que ele já respondeu
-    NESTA conversa. É isso que decide o que pode aparecer de gabarito no contexto."""
-    out: dict[int, str] = {}
+def _resolver_exam_id(prefixo: str | None, exam_ids: list[int]) -> int | None:
+    """Prefixo explícito manda; sem prefixo só é seguro resolver quando a
+    conversa tem exatamente 1 caderno — com mais de 1, uma mensagem sem
+    prefixo é ambígua e é ignorada (nunca revela gabarito por engano)."""
+    if prefixo:
+        return int(prefixo)
+    return exam_ids[0] if len(exam_ids) == 1 else None
+
+
+def _respondidas(db: Session, conversation_id: int, exam_ids: list[int]) -> dict[tuple[int, int], str]:
+    """{(exam_id, número): letra que o aluno marcou} — só as que ele já
+    respondeu NESTA conversa. É isso que decide o que pode aparecer de
+    gabarito no contexto — chave por caderno pra não colidir número repetido
+    entre cadernos diferentes selecionados juntos."""
+    out: dict[tuple[int, int], str] = {}
     textos = db.execute(
         select(ChatMessage.conteudo).where(
             ChatMessage.conversation_id == conversation_id, ChatMessage.role == "user",
@@ -94,27 +113,45 @@ def _respondidas(db: Session, conversation_id: int) -> dict[int, str]:
     ).scalars()
     for texto in textos:
         m = _RE_RESPOSTA.match((texto or "").strip())
-        if m:
-            out[int(m.group(1))] = m.group(2).upper()
+        if not m:
+            continue
+        eid = _resolver_exam_id(m.group(1), exam_ids)
+        if eid is not None:
+            out[(eid, int(m.group(2)))] = m.group(3).upper()
     return out
 
 
-def _contexto_caderno(db: Session, exam_id: int | None, respondidas: dict[int, str], limite: int = 60) -> str:
-    if not exam_id:
+def _exam_ids_efetivos(conversa: Conversation) -> list[int]:
+    """[115]: `exam_ids` é a fonte de verdade pra conversas novas; conversas
+    antigas só têm `exam_id` (singular) — tratado aqui, não precisou de
+    backfill no banco."""
+    if conversa.exam_ids:
+        return list(conversa.exam_ids)
+    return [conversa.exam_id] if conversa.exam_id else []
+
+
+def _contexto_caderno(
+    db: Session, exam_ids: list[int], respondidas: dict[tuple[int, int], str], limite_total: int = 60,
+) -> str:
+    if not exam_ids:
         return "Sem caderno específico — ajude o aluno no que ele estudar."
-    exam = db.get(Exam, exam_id)
-    if not exam:
+    exams = [e for e in (db.get(Exam, eid) for eid in exam_ids) if e]
+    if not exams:
         return ""
-    linhas = [f"Caderno: {exam.orgao} · {exam.cargo} ({exam.banca}{f', {exam.ano}' if exam.ano else ''})."]
-    for q in [q for q in exam.questoes if not q.descartada][:limite]:
-        enun = _sem_html(q.pergunta or q.enunciado)[:200]
-        alts = " | ".join(f"{c.letra}) {_sem_html(c.texto)[:60]}" for c in q.alternativas)
-        fig = " [tem figura]" if q.tem_figura else ""
-        if q.numero in respondidas:
-            gab = f"Gabarito: {q.gabarito or '?'} (o aluno respondeu {respondidas[q.numero]})"
-        else:
-            gab = "Gabarito: (NÃO revelado — aluno ainda não respondeu)"
-        linhas.append(f"Q{q.numero} [{q.disciplina}]: {enun} — {alts} — {gab}{fig}")
+    limite_por_caderno = max(10, limite_total // len(exams))
+    linhas: list[str] = []
+    for exam in exams:
+        linhas.append(f"Caderno: {exam.orgao} · {exam.cargo} ({exam.banca}{f', {exam.ano}' if exam.ano else ''}).")
+        for q in [q for q in exam.questoes if not q.descartada][:limite_por_caderno]:
+            enun = _sem_html(q.pergunta or q.enunciado)[:200]
+            alts = " | ".join(f"{c.letra}) {_sem_html(c.texto)[:60]}" for c in q.alternativas)
+            fig = " [tem figura]" if q.tem_figura else ""
+            chave = (exam.id, q.numero)
+            if chave in respondidas:
+                gab = f"Gabarito: {q.gabarito or '?'} (o aluno respondeu {respondidas[chave]})"
+            else:
+                gab = "Gabarito: (NÃO revelado — aluno ainda não respondeu)"
+            linhas.append(f"Q{q.numero} [{q.disciplina}]: {enun} — {alts} — {gab}{fig}")
     return "\n".join(linhas)
 
 
@@ -132,23 +169,29 @@ def _figura_b64(db: Session, question_id: int | None) -> str | None:
 
 def responder(db: Session, conversa: Conversation, texto_usuario: str,
               question_id: int | None = None, imagem_b64: str | None = None) -> str:
+    exam_ids = _exam_ids_efetivos(conversa)
     # a resposta DESTA mensagem ainda não está no histórico (só é persistida depois que
     # responder() retorna) — mescla aqui para o próprio turno em que o aluno responde já
     # revelar o gabarito, sem esperar a próxima mensagem.
-    respondidas = _respondidas(db, conversa.id)
+    respondidas = _respondidas(db, conversa.id, exam_ids)
     m = _RE_RESPOSTA.match(texto_usuario.strip())
     if m:
-        respondidas[int(m.group(1))] = m.group(2).upper()
+        eid = _resolver_exam_id(m.group(1), exam_ids)
+        if eid is not None:
+            respondidas[(eid, int(m.group(2)))] = m.group(3).upper()
 
     # [109]: modo "tutor" (aba Tutor IA) é especialista geral, grounded na
     # biblioteca uso=tutor — sem caderno de questões oficial. Modo "chat"
     # (padrão) segue como sempre: tutor do caderno, biblioteca uso=chat.
+    # [115]: modo "chat" agora respeita a escolha de fontes RAG da conversa
+    # (antes ignorava `rag_doc_ids` nesse modo — usava sempre TODOS os
+    # documentos uso_chat=true, sem filtro nenhum).
     if conversa.modo == "tutor":
         sistema = SISTEMA_TUTOR + "\n\n" + PERSONA_TUTOR.get(conversa.persona, PERSONA_TUTOR["professor"])
         biblioteca = contexto_biblioteca(db, texto_usuario, uso="tutor", doc_ids=conversa.rag_doc_ids or None)
     else:
-        sistema = SISTEMA + "\n\nConteúdo do caderno:\n" + _contexto_caderno(db, conversa.exam_id, respondidas)
-        biblioteca = contexto_biblioteca(db, texto_usuario, uso="chat")
+        sistema = SISTEMA + "\n\nConteúdo do caderno:\n" + _contexto_caderno(db, exam_ids, respondidas)
+        biblioteca = contexto_biblioteca(db, texto_usuario, uso="chat", doc_ids=conversa.rag_doc_ids or None)
     # [108]: motor de biblioteca — best-effort, "" quando não há nada relevante.
     if biblioteca:
         sistema += "\n\n" + biblioteca
