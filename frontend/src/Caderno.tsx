@@ -1,6 +1,6 @@
 import DOMPurify from "dompurify"
 import { useEffect, useRef, useState } from "react"
-import { api, type Exame, type Explicacao, type GemeaT, type Questao, type ResultadoSimulado, type SimResultado, type SimRun } from "./api"
+import { api, ApiError, type Exame, type Explicacao, type GemeaT, type Questao, type ResultadoSimulado, type SimResultado, type SimRun } from "./api"
 
 const LETRAS = ["A", "B", "C", "D", "E"]
 const MASTERY_ROTULO: Record<string, string> = {
@@ -77,6 +77,8 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
     const [marcadas, setMarcadas] = useState<Record<number, Set<string>>>({})
     const [foraDoCampo, setForaDoCampo] = useState<Record<number, boolean>>({})
     const [resultado, setResultado] = useState<SimResultado | ResultadoSimulado | null>(null)
+    const [erroInicio, setErroInicio] = useState<string | null>(null)
+    const [semCredito, setSemCredito] = useState<string | null>(null)
 
     // configurações do cartão
     const [tamanhoBolha, setTamanhoBolha] = useState(22)  // px — o usuário controla
@@ -91,7 +93,10 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
     const marcadoEm = useRef<Record<number, number>>({})
 
     useEffect(() => {
-        api.questoes(exameId).then((d) => setQs(d.filter((q) => !q.descartada))).catch(() => setQs([]))
+        api.questoes(exameId).then((d) => setQs(d.filter((q) => !q.descartada))).catch((e: unknown) => {
+            if (e instanceof ApiError && e.status === 402) { setSemCredito(e.message); return }
+            setQs([])
+        })
     }, [exameId])
 
     // cronômetro do simulado por tempo
@@ -107,6 +112,7 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [run, resultado])
 
+    if (semCredito) return <p className="falha">🔒 {semCredito}</p>
     if (!qs) return <p className="neutro">Carregando questões…</p>
 
     function marcar(qid: number, letra: string, fora: boolean) {
@@ -138,10 +144,15 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
     }
 
     async function iniciarComTempo() {
-        const r = await api.iniciarSimulado(exameId, minutos * 60)
-        setRun(r)
-        setMarcadas({}); setForaDoCampo({}); setResultado(null)
-        inicioRef.current = Date.now(); marcadoEm.current = {}  // zera o relógio das questões
+        setErroInicio(null)
+        try {
+            const r = await api.iniciarSimulado(exameId, minutos * 60)
+            setRun(r)
+            setMarcadas({}); setForaDoCampo({}); setResultado(null)
+            inicioRef.current = Date.now(); marcadoEm.current = {}  // zera o relógio das questões
+        } catch (e) {
+            setErroInicio(e instanceof Error ? e.message : "Não foi possível iniciar o simulado.")
+        }
     }
 
     async function entregar() {
@@ -218,6 +229,7 @@ function Simulado({ exameId, modo }: { exameId: number; modo: "celular" | "compu
                             <input type="number" min={1} value={minutos} onChange={(e) => setMinutos(Number(e.target.value))} />
                         </label>
                         <button className="entregar" onClick={iniciarComTempo}>▶ Iniciar simulado por tempo</button>
+                        {erroInicio && <p className="falha">{erroInicio}</p>}
                         <p className="regra">Ou preencha e entregue sem tempo, treinando.</p>
                     </div>
                 )}

@@ -8,6 +8,8 @@
     --borda: #e2e5ea;
     --ok: #12805c;
     --falha: #c02626;
+    --azul: #2563eb;
+    --cinza-cat: #6b7280;
     color-scheme: light dark;
 }
 
@@ -20,6 +22,8 @@
         --borda: #262b34;
         --ok: #35d29b;
         --falha: #ff6b6b;
+        --azul: #5b9dff;
+        --cinza-cat: #9aa4b2;
     }
 }
 
@@ -196,6 +200,12 @@ textarea { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--bo
 .uso-cab strong { font-size: .88rem; }
 .uso-atualizar { font-size: .78rem; }
 .vazio-uso { color: var(--suave); font-size: .82rem; margin: 0; }
+/* Barras de hoje/mês ([100]) — mesmo padrão visual do plataforma de estudo (2 barras
+   de %, não uma tira de células por dia). Nunca mostram o número de crédito
+   bruto (o aluno não vê custo). */
+.barra-uso { width: 100%; height: 10px; border-radius: 5px; background: var(--borda); overflow: hidden; margin-bottom: 10px; }
+.barra-uso-fill { height: 100%; background: var(--ok); transition: width .3s ease; }
+
 .uso-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .uso-item { display: flex; flex-direction: column; gap: 1px; padding: 8px; border: 1px solid var(--borda); border-radius: 7px; background: var(--cartao); }
 .uso-item.ruim { border-color: #c0392b; }
@@ -362,6 +372,22 @@ button.ia:hover { background: #5b21b6; }
 .form-estat h3 { margin: 0 0 10px; font-size: .95rem; }
 .grade-estat { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
 .grade-estat label { display: grid; gap: 4px; font-size: .8rem; color: var(--suave); }
+.lista-usuarios { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; max-height: 280px; overflow-y: auto; }
+.usuario-linha {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px;
+    border: 2px solid var(--borda); background: var(--fundo); color: var(--texto);
+    cursor: pointer; text-align: left; width: 100%; font: inherit;
+}
+.usuario-linha.verde { border-color: var(--ok); }
+.usuario-linha.azul { border-color: var(--azul); }
+.usuario-linha.cinza { border-color: var(--cinza-cat); }
+.usuario-linha.vermelho { border-color: var(--falha); }
+.usuario-linha.sel { background: var(--cartao); box-shadow: 0 0 0 1px var(--texto) inset; }
+.usuario-icone { font-size: 1.05rem; flex-shrink: 0; }
+.usuario-nome-email { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.usuario-nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usuario-email { font-size: .72rem; color: var(--suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usuario-valores { font-size: .72rem; color: var(--suave); white-space: nowrap; flex-shrink: 0; }
 .recursos-bloco { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--borda); }
 .lista-recursos { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 5px; }
 .lista-recursos li { display: flex; align-items: center; gap: 8px; font-size: .82rem; }
@@ -369,6 +395,9 @@ button.ia:hover { background: #5b21b6; }
 .tabela-estat { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: .85rem; }
 .tabela-estat th, .tabela-estat td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borda); }
 .tabela-estat th { color: var(--suave); font-weight: 600; }
+.rag-uso { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.rag-uso label { display: flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--texto); flex-direction: row; text-align: left; }
+.rag-uso input[type="checkbox"] { width: auto; padding: 0; border: none; background: transparent; accent-color: var(--texto); }
 
 /* comparação no desempenho */
 .linha-enfase { grid-template-columns: 1fr auto 70px auto auto 1fr; }
@@ -693,6 +722,8 @@ button.ia:hover { background: #5b21b6; }
 .icone-mic-chevron { min-height: 0; padding: 5px 7px; background: transparent; border: none; color: var(--suave); }
 .icone-mic-chevron:hover { color: var(--texto); }
 @keyframes pulsar-grav { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+/* [109]: botão de falar do Tutor IA — mesma pulsação do aperta-e-segura do Chat. */
+.chat-botoes button.gravando { background: var(--falha); color: #fff; animation: pulsar-grav 1s ease-in-out infinite; }
 
 /* Modo de voz da conversa: botão grande acima do campo, pra liderar a tela
    em vez do texto (o campo continua ali embaixo, pra quem preferir digitar). */
@@ -705,6 +736,12 @@ button.ia:hover { background: #5b21b6; }
 .mic-grupo.maos-livres-ativo { border-color: var(--texto); }
 .maos-livres-tarja { width: 100%; margin: 0 0 8px; padding: 8px 12px; border-radius: 10px; border: 1px dashed var(--borda);
                      background: var(--fundo); color: var(--suave); font-size: .8rem; text-align: center; }
+
+/* [111]: embed oficial do YouTube + captura de áudio da própria aba (getDisplayMedia) —
+   o servidor nunca baixa nada do YouTube, só recebe o áudio já gravado pelo navegador. */
+.video-captura { margin-top: 10px; padding: 10px; border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo); }
+.video-captura iframe { width: 100%; aspect-ratio: 16 / 9; border: none; border-radius: 8px; display: block; }
+.gravando-video { width: 100%; background: var(--falha); color: #fff; border: none; animation: pulsar-grav 1s ease-in-out infinite; }
 
 /* Popup ancorado na LINHA de botões (não no botão individual que o abre): a
    pill do modelo pode ficar no meio da linha (entre "+" e "🎤"/"Enviar"), e um

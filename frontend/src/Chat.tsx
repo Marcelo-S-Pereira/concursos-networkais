@@ -75,8 +75,9 @@ function LinhaVideo({ termo, recurso }: { termo: string; recurso?: MeuRecurso })
     )
 }
 
-/** Renderiza a resposta, linha a linha; "BUSCAR: x" vira o bloco de vídeo acima. */
-function Corpo({ texto, recursoVideos }: { texto: string; recursoVideos?: MeuRecurso }) {
+/** Renderiza a resposta, linha a linha; "BUSCAR: x" vira o bloco de vídeo acima.
+ *  Exportado — reaproveitado pela aba Tutor IA ([109]), mesma convenção. */
+export function Corpo({ texto, recursoVideos }: { texto: string; recursoVideos?: MeuRecurso }) {
     const linhas = texto.split("\n")
     return (
         <>
@@ -299,12 +300,13 @@ function calcularRms(analiser: AnalyserNode, buffer: Float32Array<ArrayBuffer>):
     return Math.sqrt(soma / buffer.length)
 }
 
-type EstadoMic = { count: number; erro: string | null } | null
+export type EstadoMic = { count: number; erro: string | null } | null
 
 /** Checagem REAL de microfone via mediaDevices — nunca decorativa. Sem pedir
  *  permissão ela só enumera dispositivos (não pede nada ao usuário); com
- *  `pedirPermissao` chama getUserMedia de verdade e reavalia. */
-async function checarMicrofone(pedirPermissao: boolean): Promise<EstadoMic> {
+ *  `pedirPermissao` chama getUserMedia de verdade e reavalia. Exportada —
+ *  reaproveitada pela aba Tutor IA ([109]), mesmo padrão de honestidade. */
+export async function checarMicrofone(pedirPermissao: boolean): Promise<EstadoMic> {
     if (!navigator.mediaDevices?.enumerateDevices) {
         return { count: 0, erro: "Este navegador não oferece acesso a microfone." }
     }
@@ -524,8 +526,13 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
         : "Padrão do sistema"
 
     async function novaConversa() {
-        const c = await api.chatCriarConversa(novoCaderno === "" ? null : Number(novoCaderno), "Nova conversa")
-        setNovaAberta(false); setNovoCaderno(""); await carregarConversas(); setAtiva(c.id)
+        setErro(null)
+        try {
+            const c = await api.chatCriarConversa(novoCaderno === "" ? null : Number(novoCaderno), "Nova conversa")
+            setNovaAberta(false); setNovoCaderno(""); await carregarConversas(); setAtiva(c.id)
+        } catch (e: unknown) {
+            setErro(e instanceof Error ? e.message : "Não foi possível criar a conversa.")
+        }
     }
 
     async function trocarModelo(campo: "modelo_texto_id" | "modelo_visao_id" | "modelo_voz_id" | "modelo_transcricao_id", valor: number | null) {
@@ -992,6 +999,7 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                     </select>
                                 </label>
                                 <button onClick={novaConversa}>Criar conversa</button>
+                                {erro && <p className="falha" style={{ margin: "4px 0 0" }}>{erro}</p>}
                             </div>
                         )}
                         {conversas.map((c) => (

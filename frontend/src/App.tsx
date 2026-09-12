@@ -7,6 +7,7 @@ import Biblioteca from "./Biblioteca"
 import Revisao from "./Revisao"
 import Desempenho from "./Desempenho"
 import Chat from "./Chat"
+import TutorIA from "./TutorIA"
 import Perfil from "./Perfil"
 import Pagamentos from "./Pagamentos"
 import Youtube from "./Youtube"
@@ -26,11 +27,12 @@ export default function App() {
     return <Painel usuario={usuario} aoSair={() => setUsuario(null)} />
 }
 
-type Aba = "caderno" | "chat" | "revisao" | "desempenho" | "perfil" | "cadastro" | "ia" | "estat" | "rag" | "pagamentos" | "youtube"
+type Aba = "caderno" | "chat" | "tutor_ia" | "revisao" | "desempenho" | "perfil" | "cadastro" | "ia" | "estat" | "rag" | "pagamentos" | "youtube"
 
 const MENU: { aba: Aba; label: string; admin: boolean }[] = [
     { aba: "caderno", label: "Caderno de questões", admin: false },
     { aba: "chat", label: "Chat de estudo", admin: false },
+    { aba: "tutor_ia", label: "🎓 Tutor IA", admin: false },
     { aba: "revisao", label: "Revisão", admin: false },
     { aba: "desempenho", label: "Desempenho", admin: false },
     { aba: "cadastro", label: "Cadastro de questões", admin: true },
@@ -63,7 +65,7 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
     }
 
     return (
-        <main className={`tela ${modo === "computador" ? "modo-computador" : "modo-celular"}${aba === "chat" ? " tela-chat" : ""}`}>
+        <main className={`tela ${modo === "computador" ? "modo-computador" : "modo-celular"}${aba === "chat" || aba === "tutor_ia" ? " tela-chat" : ""}`}>
             <header className="topo">
                 <div className="topo-esq">
                     <button className="hamburguer" aria-label="Abrir menu" onClick={() => setMenuAberto(true)}>☰</button>
@@ -105,6 +107,7 @@ function Painel({ usuario, aoSair }: { usuario: Usuario; aoSair: () => void }) {
 
             {aba === "caderno" && <Caderno modo={modo} />}
             {aba === "chat" && <Chat aoGastar={recarregarCreditos} />}
+            {aba === "tutor_ia" && <TutorIA aoGastar={recarregarCreditos} />}
             {aba === "revisao" && <Revisao />}
             {aba === "desempenho" && <Desempenho />}
             {aba === "perfil" && <Perfil usuario={usuario} creditos={creditos} aoRecarregarCreditos={recarregarCreditos} />}

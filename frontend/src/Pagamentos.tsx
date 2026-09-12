@@ -46,11 +46,20 @@ export default function Pagamentos() {
     )
 }
 
+/** Custo do dia de hoje só pra mostrar ao admin — mesma conta do backend
+ *  (`acesso_diario.custo_do_dia`), aproximado; o valor que vale é sempre o
+ *  do servidor. */
+function custoDoDiaHoje(poolMensal: number): number {
+    const hoje = new Date()
+    const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()
+    return Math.max(1, Math.round(poolMensal / diasNoMes))
+}
+
 function ConfigValor({ inicial, aoSalvar }: { inicial: ConfigPagamento; aoSalvar: () => Promise<void> }) {
     const [f, setF] = useState<ConfigPagamento>(inicial)
     const [salvando, setSalvando] = useState(false)
     const [salvo, setSalvo] = useState(false)
-    const porSimulado = f.creditos_por_compra > 0 ? (f.preco_reais / f.creditos_por_compra) * f.creditos_por_simulado : 0
+    const custoHoje = custoDoDiaHoje(f.creditos_por_compra)
 
     async function salvar() {
         setSalvando(true)
@@ -60,22 +69,19 @@ function ConfigValor({ inicial, aoSalvar }: { inicial: ConfigPagamento; aoSalvar
 
     return (
         <div className="cartao">
-            <h3 style={{ margin: "0 0 8px" }}>Valor fixo</h3>
+            <h3 style={{ margin: "0 0 8px" }}>Valor fixo — pool mensal</h3>
             <div className="grade-estat">
                 <label>Preço (R$)<input type="number" step="0.01" value={f.preco_reais}
                     onChange={(e) => { setF({ ...f, preco_reais: Number(e.target.value) }); setSalvo(false) }} /></label>
-                <label>Créditos por compra<input type="number" value={f.creditos_por_compra}
+                <label>Créditos por mês<input type="number" value={f.creditos_por_compra}
                     onChange={(e) => { setF({ ...f, creditos_por_compra: Number(e.target.value) }); setSalvo(false) }} /></label>
-                <label>Créditos por simulado<input type="number" value={f.creditos_por_simulado}
-                    onChange={(e) => { setF({ ...f, creditos_por_simulado: Number(e.target.value) }); setSalvo(false) }} /></label>
-                <label>Chat por voz: segundos por crédito<input type="number" value={f.voz_segundos_por_credito}
-                    onChange={(e) => { setF({ ...f, voz_segundos_por_credito: Number(e.target.value) }); setSalvo(false) }} /></label>
             </div>
             <p className="dica">
-                Cada compra dá <b>{f.creditos_por_compra}</b> créditos por <b>R$ {f.preco_reais.toFixed(2)}</b>; cada simulado
-                consome <b>{f.creditos_por_simulado}</b> créditos ⇒ <b>R$ {porSimulado.toFixed(2)} por simulado</b>. No chat
-                por voz, cada <b>{f.voz_segundos_por_credito}s</b> falados custam <b>1 crédito</b> (cobrado pelo tempo real
-                da pergunta, não por mensagem).
+                Cada compra dá <b>{f.creditos_por_compra}</b> créditos por <b>R$ {f.preco_reais.toFixed(2)}</b>, válidos
+                até o fim do mês (não acumulam). Simulado, chat de estudo e tutor ficam atrás de uma <b>porta de acesso
+                diária</b>: o primeiro uso do dia já abre, sem botão — custa <b>{f.creditos_por_compra} ÷ dias do mês</b>,
+                hoje seria <b>~{custoHoje} créditos</b>. O aluno nunca vê esse número — só um gráfico de atividade da
+                semana. Admin, moderador (quando existir) e vitalício não pagam nada disso.
             </p>
             <button disabled={salvando} onClick={salvar}>{salvando ? "Salvando…" : "Salvar valor"}</button>
             {salvo && <span className="dica"> ✓ salvo</span>}

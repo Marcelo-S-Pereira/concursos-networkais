@@ -1,8 +1,27 @@
 import { useEffect, useRef, useState } from "react"
 import { api, type RagDoc } from "./api"
 
+/** [108]: editar nome + descrição ("memória de conhecimento") de um documento. */
+function EditarMeta({ doc, aoSalvar }: { doc: RagDoc; aoSalvar: (titulo: string, descricao: string) => Promise<void> }) {
+    const [titulo, setTitulo] = useState(doc.titulo)
+    const [descricao, setDescricao] = useState(doc.descricao)
+    const [salvando, setSalvando] = useState(false)
+    return (
+        <div style={{ marginBottom: 10 }}>
+            <label>Nome<input value={titulo} onChange={(e) => setTitulo(e.target.value)} /></label>
+            <label>Descrição (do que trata o conteúdo — memória de conhecimento)
+                <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={2} maxLength={500} />
+            </label>
+            <button disabled={salvando} onClick={async () => { setSalvando(true); try { await aoSalvar(titulo, descricao) } finally { setSalvando(false) } }}>
+                {salvando ? "Salvando…" : "Salvar nome/descrição"}
+            </button>
+        </div>
+    )
+}
+
 export default function Biblioteca() {
     const [docs, setDocs] = useState<RagDoc[] | null>(null)
+    const [abertos, setAbertos] = useState<Set<number>>(new Set())
     const [enviando, setEnviando] = useState(false)
     const [erro, setErro] = useState<string | null>(null)
     const [consulta, setConsulta] = useState("")
@@ -22,6 +41,28 @@ export default function Biblioteca() {
             await api.ragImportar(fd); await recarregar()
         } catch (e) { setErro(e instanceof Error ? e.message : "Falha") }
         finally { setEnviando(false) }
+    }
+    function alternarAberto(id: number) {
+        setAbertos((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+    }
+    async function alternarUso(d: RagDoc, campo: "uso_chat" | "uso_tutor" | "uso_simulado") {
+        setErro(null)
+        try {
+            const atualizado = await api.ragClassificar(
+                d.id,
+                campo === "uso_chat" ? !d.uso_chat : d.uso_chat,
+                campo === "uso_tutor" ? !d.uso_tutor : d.uso_tutor,
+                campo === "uso_simulado" ? !d.uso_simulado : d.uso_simulado,
+            )
+            setDocs((ds) => ds?.map((x) => (x.id === d.id ? atualizado : x)) ?? ds)
+        } catch (e) { setErro(e instanceof Error ? e.message : "Falha ao classificar") }
+    }
+    async function salvarMeta(id: number, titulo: string, descricao: string) {
+        setErro(null)
+        try {
+            const atualizado = await api.ragEditarMeta(id, titulo, descricao)
+            setDocs((ds) => ds?.map((x) => (x.id === id ? atualizado : x)) ?? ds)
+        } catch (e) { setErro(e instanceof Error ? e.message : "Falha ao salvar") }
     }
     async function buscar() {
         setErro(null)
@@ -46,6 +87,15 @@ export default function Biblioteca() {
                 Precisa de uma conexão de IA de <strong>embeddings</strong> (cadastre em Cadastro de IA); sem ela,
                 os trechos ficam salvos e você reindexa depois.
             </p>
+            <p className="explica">
+                Cada documento tem uma <strong>classificação de uso</strong>: em quais ferramentas ele pode ser
+                consultado — Chat de estudos, Tutor IA, Simulado/Caderno de questões. Marcar só "Tutor IA" faz esse
+                documento entrar só ali. <strong>Chat de estudos e Tutor IA já consultam</strong> os documentos
+                classificados pra cada um (usa e cita só se ajudar; senão ignora); em cada conversa do Tutor IA o
+                usuário escolhe quais documentos valem. Simulado ainda não consulta. Edite o <strong>nome e a
+                descrição</strong> de cada documento (resumo do conteúdo, gerado como rascunho na importação)
+                clicando pra expandir.
+            </p>
 
             <div className="topo-cadernos">
                 <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={(e) => e.target.files?.[0] && importar(e.target.files[0])} />
@@ -53,22 +103,45 @@ export default function Biblioteca() {
             </div>
             {erro && <p className="falha">{erro}</p>}
 
-            <table className="tabela-estat">
-                <thead><tr><th>Documento</th><th>Coleção</th><th>Trechos</th><th>Indexado</th><th></th></tr></thead>
-                <tbody>
-                    {docs.map((d) => (
-                        <tr key={d.id}>
-                            <td>{d.titulo}</td><td>{d.colecao}</td><td>{d.chunk_count}</td>
-                            <td>{d.indexado ? "✓" : (d.erro ? "pendente" : "não")}</td>
-                            <td>
-                                {!d.indexado && <button className="link" onClick={async () => { try { await api.ragReindexar(d.id); recarregar() } catch (e) { setErro(e instanceof Error ? e.message : "?") } }}>reindexar</button>}
-                                {" "}<button className="link" onClick={async () => { if (confirm("Apagar?")) { await api.ragApagar(d.id); recarregar() } }}>apagar</button>
-                            </td>
-                        </tr>
-                    ))}
-                    {!docs.length && <tr><td colSpan={5} className="neutro">Nenhum documento ainda.</td></tr>}
-                </tbody>
-            </table>
+            {!docs.length && <p className="neutro">Nenhum documento ainda.</p>}
+            {docs.map((d) => {
+                const aberto = abertos.has(d.id)
+                return (
+                    <div key={d.id} className={`caderno-linha ${aberto ? "aberto" : ""}`}>
+                        <div className="caderno-cab" onClick={() => alternarAberto(d.id)}>
+                            <span className="seta">{aberto ? "▾" : "▸"}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <strong style={{ display: "block", overflowWrap: "anywhere" }}>{d.titulo}</strong>
+                                <span className="caderno-meta">
+                                    {d.colecao} · {d.chunk_count} trechos · {d.indexado ? "indexado" : (d.erro ? "pendente" : "não indexado")}
+                                    {d.enviado_por && <> · enviado por {d.enviado_por}</>}
+                                </span>
+                                {d.descricao && <span className="caderno-meta" style={{ display: "block" }}>{d.descricao}</span>}
+                            </div>
+                        </div>
+                        {aberto && (
+                            <div className="caderno-corpo-sim">
+                                <EditarMeta doc={d} aoSalvar={(titulo, descricao) => salvarMeta(d.id, titulo, descricao)} />
+                                <p className="dica" style={{ margin: "0 0 4px" }}>Usar em:</p>
+                                <div className="rag-uso">
+                                    <label><input type="checkbox" checked={d.uso_chat} onChange={() => alternarUso(d, "uso_chat")} /> Chat de estudos</label>
+                                    <label><input type="checkbox" checked={d.uso_tutor} onChange={() => alternarUso(d, "uso_tutor")} /> Tutor IA</label>
+                                    <label><input type="checkbox" checked={d.uso_simulado} onChange={() => alternarUso(d, "uso_simulado")} /> Simulado/Caderno de questões</label>
+                                </div>
+                                <div className="linha-acoes" style={{ marginTop: 10 }}>
+                                    {!d.indexado && (
+                                        <>
+                                            <span className="dica">🕓 em análise ({d.tentativas_indexacao} tentativa{d.tentativas_indexacao === 1 ? "" : "s"}) </span>
+                                            <button className="link" onClick={async () => { try { await api.ragReindexar(d.id); recarregar() } catch (e) { setErro(e instanceof Error ? e.message : "?") } }}>reindexar</button>
+                                        </>
+                                    )}
+                                    <button className="link" onClick={async () => { if (confirm("Apagar?")) { await api.ragApagar(d.id); recarregar() } }}>apagar</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )
+            })}
 
             <div className="cartao" style={{ marginTop: 16 }}>
                 <h3 style={{ margin: "0 0 8px", fontSize: ".95rem" }}>Perguntar ao edital</h3>

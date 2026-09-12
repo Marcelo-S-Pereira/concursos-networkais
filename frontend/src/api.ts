@@ -68,19 +68,27 @@ export type RecursoConcedido = { feature: string; nome: string; limite_diario: n
 export type UsuarioAdmin = {
     id: number; nome: string; email: string; role: string; saldo: number; vitalicio: boolean
     simulados: number; recursos: RecursoConcedido[]
+    mesmo_cpf_dono: boolean; comprado: number; doado: number
 }
 export type RecursoCatalogo = Record<string, { nome: string; unidade: string; custo_unidade_api: number }>
 export type MeuRecurso = { liberado: boolean; limite_diario: number | null; usado_hoje: number }
 export type YoutubeUso = { buscas_hoje: number; unidades_hoje: number; cota_diaria_unidades: number; pct: number }
 export type Conversa = {
     id: number; exam_id: number | null; titulo: string
+    modo: "chat" | "tutor"; persona: "professor" | "amigo"; rag_doc_ids: number[]
     modelo_texto_id: number | null; modelo_visao_id: number | null
     modelo_voz_id: number | null; modelo_transcricao_id: number | null; modo_voz: boolean
+}
+export type DocTutor = {
+    id: number; titulo: string; descricao: string; indexado: boolean
+    tentativas_indexacao: number; enviado_por: string | null
 }
 export type ModeloOpcao = { id: number; nome: string; modelo: string; ativa: boolean }
 export type ModelosChat = { texto: ModeloOpcao[]; visao: ModeloOpcao[]; voz: ModeloOpcao[]; transcricao: ModeloOpcao[] }
 export type EditarConversaIn = {
     titulo?: string
+    persona?: "professor" | "amigo"
+    rag_doc_ids?: number[]
     modelo_texto_id?: number | null; modelo_visao_id?: number | null
     modelo_voz_id?: number | null; modelo_transcricao_id?: number | null
     modo_voz?: boolean
@@ -101,7 +109,10 @@ export type CreditosResumo = {
 }
 export type PlataformaPagamento = { id: number; titulo: string; provedor: string; public_key: string; ativa: boolean; token_mascarado: string }
 export type PlataformaPagamentoInput = { titulo: string; provedor: string; access_token: string; public_key: string }
-export type ConfigPagamento = { preco_reais: number; creditos_por_compra: number; creditos_por_simulado: number; voz_segundos_por_credito: number }
+export type ConfigPagamento = { preco_reais: number; creditos_por_compra: number }
+export type EstadoHoje = { isento: boolean; aberto: boolean; abriu_em: string | null; fecha_em: string | null }
+export type ResumoSemana = { isento: boolean; usado: number; alvo: number }
+export type MinhaPorta = { hoje: EstadoHoje; semana: ResumoSemana }
 export type YoutubeStatus = { configurada: boolean; chave_mascarada: string | null }
 export type VideoResultado = { video_id: string; titulo: string; canal: string; miniatura: string; url: string }
 export type SaudeVPS = {
@@ -139,7 +150,10 @@ export type Plataforma = {
     id: number; titulo: string; endpoint: string; chave_mascarada: string; qtd_modelos: number
 }
 export type PlataformaInput = { titulo: string; endpoint: string; api_key: string }
-export type RagDoc = { id: number; titulo: string; colecao: string; chunk_count: number; indexado: boolean; erro: string | null }
+export type RagDoc = {
+    id: number; titulo: string; descricao: string; colecao: string; chunk_count: number; indexado: boolean; erro: string | null
+    uso_chat: boolean; uso_tutor: boolean; uso_simulado: boolean; enviado_por: string | null; tentativas_indexacao: number
+}
 export type ConexaoIA = {
     id: number; platform_id: number; plataforma_titulo: string
     nome: string; modelo: string; categoria: string
@@ -238,8 +252,10 @@ export const api = {
     aplicarCampanha: (alvo: string, quantidade: number, motivo: string, limite: number) =>
         pedir<{ beneficiados: number }>("/admin/campanha", { method: "POST", body: JSON.stringify({ alvo, quantidade, motivo, limite }) }),
     meusCreditos: () => pedir<CreditosResumo>("/creditos"),
-    chatConversas: () => pedir<Conversa[]>("/chat/conversas"),
-    chatCriarConversa: (exam_id: number | null, titulo: string) => pedir<Conversa>("/chat/conversas", { method: "POST", body: JSON.stringify({ exam_id, titulo }) }),
+    minhaPorta: () => pedir<MinhaPorta>("/creditos/porta"),
+    chatConversas: (modo: "chat" | "tutor" = "chat") => pedir<Conversa[]>(`/chat/conversas?modo=${modo}`),
+    chatCriarConversa: (exam_id: number | null, titulo: string, extra?: { modo?: "chat" | "tutor"; persona?: "professor" | "amigo"; rag_doc_ids?: number[]; modo_voz?: boolean }) =>
+        pedir<Conversa>("/chat/conversas", { method: "POST", body: JSON.stringify({ exam_id, titulo, ...extra }) }),
     chatMensagens: (cid: number) => pedir<Conversa & { mensagens: ChatMsg[] }>(`/chat/conversas/${cid}`),
     chatModelos: () => pedir<ModelosChat>("/chat/modelos"),
     chatEditarConversa: (cid: number, d: EditarConversaIn) =>
@@ -285,6 +301,28 @@ export const api = {
     apagarYoutube: () => pedir<void>("/admin/youtube", { method: "DELETE" }),
     testarYoutube: () => pedir<{ ok: boolean; mensagem: string }>("/admin/youtube/testar", { method: "POST" }),
     chatVideos: (termo: string) => pedir<{ resultados: VideoResultado[] }>("/chat/videos", { method: "POST", body: JSON.stringify({ termo }) }),
+    tutorDocumentos: () => pedir<DocTutor[]>("/tutor/documentos"),
+    tutorEnviarArquivos: async (arquivos: File[], conversationId: number | null) => {
+        const fd = new FormData()
+        arquivos.forEach((a) => fd.append("arquivos", a))
+        if (conversationId != null) fd.append("conversation_id", String(conversationId))
+        const res = await fetch("/api/v1/tutor/documentos/arquivo", { method: "POST", credentials: "include", body: fd })
+        if (!res.ok) { const c = await res.json().catch(() => null); throw new Error(c?.detail ?? "Falha ao enviar o(s) arquivo(s)") }
+        return res.json() as Promise<{ id: number; titulo: string; descricao: string; chunk_count: number }[]>
+    },
+    tutorEnviarVideo: (url: string, conversationId: number | null) =>
+        pedir<{ id: number; titulo: string; descricao: string; chunk_count: number }>(
+            "/tutor/documentos/video", { method: "POST", body: JSON.stringify({ url, conversation_id: conversationId }) },
+        ),
+    tutorEnviarVideoAudio: async (blob: Blob, url: string, conversationId: number | null) => {
+        const fd = new FormData()
+        fd.append("file", blob, "video.webm")
+        fd.append("url", url)
+        if (conversationId != null) fd.append("conversation_id", String(conversationId))
+        const res = await fetch("/api/v1/tutor/documentos/video-audio", { method: "POST", credentials: "include", body: fd })
+        if (!res.ok) { const c = await res.json().catch(() => null); throw new Error(c?.detail ?? "Falha ao transcrever o áudio") }
+        return res.json() as Promise<{ id: number; titulo: string; descricao: string; chunk_count: number }>
+    },
     adminSaude: () => pedir<SaudeVPS>("/admin/saude"),
     adminBloquearCadastros: (bloqueado: boolean) =>
         pedir<{ cadastros_bloqueados: boolean }>("/admin/cadastros", { method: "POST", body: JSON.stringify({ bloqueado }) }),
@@ -306,6 +344,10 @@ export const api = {
         return res.json() as Promise<RagDoc>
     },
     ragReindexar: (id: number) => pedir<RagDoc>(`/rag/documentos/${id}/reindexar`, { method: "POST" }),
+    ragClassificar: (id: number, uso_chat: boolean, uso_tutor: boolean, uso_simulado: boolean) =>
+        pedir<RagDoc>(`/rag/documentos/${id}`, { method: "PATCH", body: JSON.stringify({ uso_chat, uso_tutor, uso_simulado }) }),
+    ragEditarMeta: (id: number, titulo: string, descricao: string) =>
+        pedir<RagDoc>(`/rag/documentos/${id}`, { method: "PATCH", body: JSON.stringify({ titulo, descricao }) }),
     ragApagar: (id: number) => pedir<void>(`/rag/documentos/${id}`, { method: "DELETE" }),
     ragBuscar: (consulta: string) => pedir<{ resultados: { titulo: string; chunk: number; conteudo: string }[] }>("/rag/buscar", { method: "POST", body: JSON.stringify({ consulta }) }),
     ragPerguntar: (pergunta: string) => pedir<{ resposta: string; trechos: { titulo: string; chunk: number; conteudo: string }[] }>("/rag/perguntar", { method: "POST", body: JSON.stringify({ pergunta }) }),

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { api, type AdminOverview, type CreditosResumo, type LimitesConfig, type Orcamento, type RecursoCatalogo, type SaudeVPS, type Usuario, type UsuarioAdmin } from "./api"
+import { useEffect, useRef, useState } from "react"
+import { api, type AdminOverview, type CreditosResumo, type EstadoHoje, type LimitesConfig, type Orcamento, type RecursoCatalogo, type ResumoSemana, type SaudeVPS, type Usuario, type UsuarioAdmin } from "./api"
 
 const HIERARQUIA: Record<string, string> = {
     superadmin: "Administrador mestre",
@@ -7,8 +7,56 @@ const HIERARQUIA: Record<string, string> = {
 }
 const STATUS_ROTULO: Record<string, string> = { ok: "tudo bem", atencao: "atenção", critico: "crítico" }
 const TIPO_ROTULO: Record<string, string> = {
-    compra: "compra", bonus: "bônus", ajuste: "ajuste",
+    compra: "compra", bonus: "bônus", ajuste: "ajuste", acesso_diario: "acesso do dia",
     gasto_simulado: "simulado", gasto_chat_texto: "chat (texto)", gasto_chat_voz: "chat (voz)",
+}
+
+/** Barra de HOJE: contagem regressiva de verdade (não "% usado" — o uso é
+ *  ilimitado uma vez aberta a porta). Ancorada no momento em que abriu, não na
+ *  meia-noite — senão quem abre às 23h veria a barra quase cheia sem ter usado
+ *  nada. Tica sozinha, mesmo padrão `setInterval` do cronômetro do simulado
+ *  em Caderno.tsx. */
+function BarraHoje({ hoje }: { hoje: EstadoHoje }) {
+    const [estado, setEstado] = useState({ pct: 0, restanteMin: 0 })
+    const abriuMs = useRef(hoje.abriu_em ? new Date(hoje.abriu_em).getTime() : 0)
+    const fechaMs = useRef(hoje.fecha_em ? new Date(hoje.fecha_em).getTime() : 0)
+
+    useEffect(() => {
+        if (!hoje.aberto) return
+        const calcular = () => {
+            const total = fechaMs.current - abriuMs.current
+            const decorrido = Date.now() - abriuMs.current
+            setEstado({
+                pct: Math.max(0, Math.min(100, total > 0 ? (decorrido / total) * 100 : 100)),
+                restanteMin: Math.max(0, Math.round((fechaMs.current - Date.now()) / 60000)),
+            })
+        }
+        calcular()
+        const t = setInterval(calcular, 15000)
+        return () => clearInterval(t)
+    }, [hoje.aberto])
+
+    if (!hoje.aberto) return <p className="dica" style={{ margin: "0 0 4px" }}>Hoje: acesso ainda não aberto.</p>
+    return (
+        <div style={{ marginBottom: 10 }}>
+            <p className="dica" style={{ margin: "0 0 4px" }}>Hoje — fecha em {estado.restanteMin} min</p>
+            <div className="barra-uso"><div className="barra-uso-fill" style={{ width: `${estado.pct}%` }} /></div>
+        </div>
+    )
+}
+
+/** Barra da SEMANA: créditos gastos na semana corrente ÷ alvo semanal
+ *  (7 × custo do dia) — mesma dupla hoje/semana do plataforma de estudo de verdade.
+ *  Só leitura da mesma CreditTransaction da porta diária; reseta sozinha na
+ *  virada da semana, sem dedução própria. */
+function BarraSemana({ semana }: { semana: ResumoSemana }) {
+    const pct = semana.alvo > 0 ? Math.min(100, (semana.usado / semana.alvo) * 100) : 0
+    return (
+        <div>
+            <p className="dica" style={{ margin: "0 0 4px" }}>Esta semana</p>
+            <div className="barra-uso"><div className="barra-uso-fill" style={{ width: `${pct}%` }} /></div>
+        </div>
+    )
 }
 
 export default function Perfil({
@@ -21,10 +69,12 @@ export default function Perfil({
     const admin = usuario.role === "superadmin"
     const [ov, setOv] = useState<AdminOverview | null>(null)
     const [saude, setSaude] = useState<SaudeVPS | null>(null)
+    const [porta, setPorta] = useState<{ hoje: EstadoHoje; semana: ResumoSemana } | null>(null)
 
     async function carregarSaude() { setSaude(await api.adminSaude().catch(() => null)) }
     useEffect(() => {
         if (admin) { api.adminOverview().then(setOv).catch(() => setOv(null)); void carregarSaude() }
+        else { api.minhaPorta().then(setPorta).catch(() => setPorta(null)) }
     }, [admin])
 
     async function bloquear(b: boolean) {
@@ -56,7 +106,16 @@ export default function Perfil({
                                 <div className="uso-item"><span className="uso-num">{creditos.total_ganho}</span><span className="uso-rot">total ganho</span></div>
                                 <div className="uso-item"><span className="uso-num">{creditos.total_gasto}</span><span className="uso-rot">total gasto</span></div>
                             </div>
-                            <p className="dica">Cada simulado e o chat consomem créditos. Compre mais na aba de planos (em breve).</p>
+                            <p className="dica">
+                                Simulado, chat de estudo e tutor abrem sozinhos no primeiro uso do dia. Compre mais
+                                créditos na aba de planos (em breve).
+                            </p>
+                            {porta && (
+                                <div style={{ marginTop: 10 }}>
+                                    <BarraHoje hoje={porta.hoje} />
+                                    <BarraSemana semana={porta.semana} />
+                                </div>
+                            )}
                         </>
                     )}
                     {creditos.extrato.length > 0 && (
@@ -217,6 +276,23 @@ function CardLimites() {
     )
 }
 
+/** Contorno por categoria ([105]) — precedência: CPF do dono (contas de
+ *  teste, [102]) > moderador (papel ainda não existe no sistema, fica
+ *  pronto pra quando existir) > vitalício > usuário normal (padrão). */
+function categoriaUsuario(u: UsuarioAdmin): "verde" | "azul" | "cinza" | "vermelho" {
+    if (u.mesmo_cpf_dono) return "verde"
+    if (u.role === "moderador") return "azul"
+    if (u.vitalicio) return "cinza"
+    return "vermelho"
+}
+/** 👑 pagante que virou vitalício · 💳 pagante normal (paga por crédito) ·
+ *  🎁 vitalício doado (nunca comprou) — hoje só o 🎁 pode aparecer de
+ *  verdade, porque o checkout do Mercado Pago ([075]) nunca foi concluído. */
+function iconePagamento(u: UsuarioAdmin): string {
+    if (u.vitalicio) return u.comprado > 0 ? "👑" : "🎁"
+    return u.comprado > 0 ? "💳" : ""
+}
+
 function ConcederCredito({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
     const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([])
     const [email, setEmail] = useState("")
@@ -263,15 +339,26 @@ function ConcederCredito({ aoConcluir }: { aoConcluir: () => Promise<void> }) {
     return (
         <div className="cartao">
             <h4 style={{ margin: "0 0 6px" }}>Doar créditos / acesso</h4>
+            <p className="dica" style={{ margin: "0 0 6px" }}>
+                🟢 CPF do dono (teste) · 🔵 moderador · ⚪ vitalício · 🔴 usuário normal —
+                👑 pagante vitalício · 💳 pagante · 🎁 vitalício doado
+            </p>
+            <div className="lista-usuarios" role="listbox" aria-label="Selecione o usuário">
+                {usuarios.map((u) => (
+                    <button key={u.id} type="button" role="option" aria-selected={email === u.email}
+                        className={`usuario-linha ${categoriaUsuario(u)} ${email === u.email ? "sel" : ""}`}
+                        onClick={() => setEmail(u.email)}>
+                        {iconePagamento(u) && <span className="usuario-icone">{iconePagamento(u)}</span>}
+                        <span className="usuario-nome-email">
+                            <span className="usuario-nome">{u.nome}</span>
+                            <span className="usuario-email">{u.email}</span>
+                        </span>
+                        <span className="usuario-valores">comprou {u.comprado} · doado {u.doado}</span>
+                    </button>
+                ))}
+                {!usuarios.length && <p className="dica">Nenhum usuário ainda.</p>}
+            </div>
             <div className="grade-estat">
-                <label>Usuário
-                    <select value={email} onChange={(e) => setEmail(e.target.value)}>
-                        <option value="">— escolha —</option>
-                        {usuarios.map((u) => (
-                            <option key={u.id} value={u.email}>{u.nome} · {u.simulados} simulado(s) · {u.saldo} cr{u.vitalicio ? " · vitalício" : ""}{u.role === "superadmin" ? " (você)" : ""}</option>
-                        ))}
-                    </select>
-                </label>
                 <label>Créditos<input type="number" value={creditos} onChange={(e) => setCreditos(e.target.value)} /></label>
                 <label>Motivo<input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="cortesia" /></label>
             </div>
