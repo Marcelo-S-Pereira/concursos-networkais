@@ -77,3 +77,37 @@ def test_chave_recusada_vira_erro_sem_vazar_a_chave(db, monkeypatch):
     with pytest.raises(youtube.YoutubeError) as exc:
         youtube.buscar(db, "algo")
     assert "chave-secreta-xyz" not in str(exc.value)
+
+
+@pytest.mark.parametrize(("iso", "segundos"), [
+    ("PT15M33S", 933), ("PT1H2M3S", 3723), ("PT45S", 45), ("PT2H", 7200), ("lixo", None), ("", None),
+])
+def test_parse_duracao_iso8601(iso, segundos):
+    assert youtube._duracao_para_segundos(iso) == segundos
+
+
+def test_duracao_video_sem_chave_da_none(db):
+    assert youtube.duracao_video(db, "abc123") is None  # [113]: nunca lança, só não estima
+
+
+def test_duracao_video_parseia_contentdetails_real(db, monkeypatch):
+    youtube.salvar_chave(db, "chave-de-teste")
+
+    def fake_get(url, params=None, timeout=None):
+        assert url.endswith("/videos")
+        assert params["id"] == "abc123"
+        return httpx.Response(200, json={"items": [{"contentDetails": {"duration": "PT9M12S"}}]},
+                              request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert youtube.duracao_video(db, "abc123") == 552
+
+
+def test_duracao_video_id_inexistente_da_none(db, monkeypatch):
+    youtube.salvar_chave(db, "chave-de-teste")
+
+    def fake_get(url, params=None, timeout=None):
+        return httpx.Response(200, json={"items": []}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert youtube.duracao_video(db, "naoexiste") is None

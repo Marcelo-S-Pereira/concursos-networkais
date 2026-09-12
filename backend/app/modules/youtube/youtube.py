@@ -5,6 +5,8 @@ plataformas de pagamento). Nunca aparece em log nem em mensagem de erro. Sem
 chave configurada, o chamador deve cair no link de busca simples (fallback que
 não depende disto)."""
 
+import re
+
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from app.core.crypto import cifrar_ia, decifrar_ia, mascarar_chave
 from app.db.models import YoutubeConfig
 
 BUSCA_URL = "https://www.googleapis.com/youtube/v3/search"
+VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 
 
 class YoutubeError(Exception):
@@ -98,6 +101,39 @@ def buscar(db: Session, query: str, max_resultados: int = 4) -> list[dict]:
         raise YoutubeError("YouTube ainda não foi configurado.")
     chave = decifrar_ia(c.chave_cifrada)
     return _buscar_com_chave(chave, query, max_resultados)
+
+
+_ISO8601_DURACAO = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
+
+
+def _duracao_para_segundos(iso: str) -> int | None:
+    """'PT15M33S' -> 933. None se não bater o formato (não inventa)."""
+    m = _ISO8601_DURACAO.match(iso or "")
+    if not m:
+        return None
+    h, mi, s = (int(g) if g else 0 for g in m.groups())
+    return h * 3600 + mi * 60 + s
+
+
+def duracao_video(db: Session, video_id: str) -> int | None:
+    """Duração real do vídeo em segundos, via `videos.list` (part=contentDetails)
+    — só metadado público, mesma chave da busca. None se a API não estiver
+    configurada ou a chamada falhar (nunca lança — é só pra mostrar um tempo
+    estimado na tela, não pode derrubar a gravação por causa disso)."""
+    c = _config(db)
+    if not c:
+        return None
+    try:
+        chave = decifrar_ia(c.chave_cifrada)
+        r = httpx.get(VIDEOS_URL, params={"part": "contentDetails", "id": video_id, "key": chave}, timeout=10)
+        if r.status_code != 200:
+            return None
+        itens = r.json().get("items", [])
+        if not itens:
+            return None
+        return _duracao_para_segundos(itens[0]["contentDetails"]["duration"])
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def testar(db: Session) -> dict:

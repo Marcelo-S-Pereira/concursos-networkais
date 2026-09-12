@@ -13,6 +13,7 @@ reproduz o vídeo pelo embed oficial e grava o áudio da própria aba
 nunca fala com o YouTube."""
 
 import io
+import re
 
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
@@ -24,8 +25,13 @@ from app.api.deps import usuario_atual
 from app.db.models import Conversation, RagDocument, User
 from app.db.session import get_db
 from app.modules.creditos import acesso_diario
+from app.modules.youtube import youtube
 
 router = APIRouter(prefix="/tutor")
+
+_ID_YOUTUBE = re.compile(
+    r"(?:youtube\.com/(?:watch\?v=|embed/|shorts/)|youtu\.be/)([a-zA-Z0-9_-]{11})"
+)
 
 
 class DocContribuidoOut(BaseModel):
@@ -181,6 +187,27 @@ def _titulo_via_oembed(url: str) -> str | None:
     except Exception:  # noqa: BLE001
         pass
     return None
+
+
+class VideoInfoOut(BaseModel):
+    titulo: str | None
+    duracao_s: int | None
+
+
+@router.get("/video-info", response_model=VideoInfoOut)
+def video_info(url: str, _: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """[113]: título + duração real do vídeo, pra mostrar UMA ESTIMATIVA de
+    quanto tempo a gravação vai levar (o vídeo toca em tempo real na aba do
+    usuário) — nunca sobe/baixa nada do YouTube, só metadado público. Duração
+    fica None sem a chave da YouTube Data API cadastrada ([083]) ou se o
+    vídeo não for encontrado — nunca inventa número. Gratuito: não gasta
+    porta diária nem crédito (mesmo critério do oEmbed acima)."""
+    m = _ID_YOUTUBE.search(url)
+    video_id = m.group(1) if m else None
+    return VideoInfoOut(
+        titulo=_titulo_via_oembed(url),
+        duracao_s=youtube.duracao_video(db, video_id) if video_id else None,
+    )
 
 
 MAX_AUDIO_VIDEO_BYTES = 75_000_000  # a Together aceita até 80MB de upload direto
