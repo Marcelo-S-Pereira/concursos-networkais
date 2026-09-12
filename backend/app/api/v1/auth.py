@@ -2,6 +2,7 @@ import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
@@ -18,11 +19,29 @@ router = APIRouter(prefix="/auth")
 
 MAX_TENTATIVAS = 5
 
+# [118]: login por senha — mesmo espírito de lockout do LoginCode.tentativas,
+# mas por conta (não por código), já que a senha é reusável indefinidamente.
+MAX_TENTATIVAS_SENHA = 5
+BLOQUEIO_SENHA_MINUTOS = 15
+
 
 def _hash_codigo(codigo: str) -> str:
     """Guardamos o hash, não o código. Se o banco vazar, os códigos ainda
     válidos não servem para entrar em conta nenhuma."""
     return hashlib.sha256(codigo.encode()).hexdigest()
+
+
+def _hash_senha(senha: str) -> str:
+    # bcrypt trunca em 72 bytes silenciosamente — o corte é explícito aqui,
+    # mesma lição registrada em [012].
+    return bcrypt.hashpw(senha.encode("utf-8")[:72], bcrypt.gensalt()).decode("utf-8")
+
+
+def _checar_senha(senha: str, hash_: str) -> bool:
+    try:
+        return bcrypt.checkpw(senha.encode("utf-8")[:72], hash_.encode("utf-8"))
+    except ValueError:
+        return False  # hash malformado no banco vira "senha errada", nunca 500
 
 
 class CadastroIn(BaseModel):
@@ -48,6 +67,9 @@ class UsuarioOut(BaseModel):
     cpf: str  # sempre mascarado
     telefone: str
     role: str
+    tem_senha: bool = False
+    senha_habilitada: bool = False
+    senha_prompt_dispensado: bool = False
 
 
 def _para_saida(u: User) -> UsuarioOut:
@@ -60,6 +82,9 @@ def _para_saida(u: User) -> UsuarioOut:
         cpf=mascarar_cpf(decifrar(u.cpf_cifrado)),
         telefone=u.telefone,
         role=u.role,
+        tem_senha=u.senha_hash is not None,
+        senha_habilitada=u.senha_habilitada,
+        senha_prompt_dispensado=u.senha_prompt_dispensado,
     )
 
 
@@ -186,4 +211,92 @@ def logout(request: Request) -> None:
 
 @router.get("/me", response_model=UsuarioOut)
 def me(user: User = Depends(usuario_atual)):
+    return _para_saida(user)
+
+
+class SenhaLoginIn(BaseModel):
+    email: EmailStr
+    senha: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/login/senha", response_model=UsuarioOut)
+def entrar_com_senha(dados: SenhaLoginIn, request: Request, db: Session = Depends(get_db)):
+    """[118]: login por senha — opcional, ao lado do código por e-mail. Cai
+    dentro do prefixo `/api/v1/auth/login` do nginx (rate limit já existe,
+    reaproveitado de graça). "Esqueci a senha" não tem rota própria — pedir
+    o código por e-mail de novo já loga direto (fluxo de sempre)."""
+    email = dados.email.lower()
+    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="E-mail não cadastrado. Faça o cadastro primeiro.")
+
+    agora = datetime.now(UTC)
+    if user.senha_bloqueada_ate and user.senha_bloqueada_ate > agora:
+        minutos = max(1, int((user.senha_bloqueada_ate - agora).total_seconds() // 60) + 1)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Tentativas demais. Tente por código enviado ao e-mail, ou aguarde {minutos} min.",
+        )
+
+    if not user.senha_hash or not user.senha_habilitada:
+        raise HTTPException(status_code=401, detail="Esta conta não tem senha cadastrada — entre por código.")
+
+    if not _checar_senha(dados.senha, user.senha_hash):
+        user.senha_tentativas_falhas += 1
+        if user.senha_tentativas_falhas >= MAX_TENTATIVAS_SENHA:
+            user.senha_bloqueada_ate = agora + timedelta(minutes=BLOQUEIO_SENHA_MINUTOS)
+        db.commit()
+        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.")
+
+    user.senha_tentativas_falhas = 0
+    user.senha_bloqueada_ate = None
+    db.commit()
+
+    request.session.clear()  # sessão nova a cada login, contra fixação
+    request.session["user_id"] = user.id
+    return _para_saida(user)
+
+
+class SenhaCadastrarIn(BaseModel):
+    senha: str = Field(min_length=8, max_length=72)
+
+
+@router.post("/senha/cadastrar", response_model=UsuarioOut)
+def cadastrar_senha(dados: SenhaCadastrarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Define (ou troca) a senha e liga o login por senha. Sempre autenticado
+    — ninguém define senha de outra conta, e definir já prova que a pessoa
+    está logada de verdade (por código ou por senha antiga)."""
+    user.senha_hash = _hash_senha(dados.senha)
+    user.senha_habilitada = True
+    user.senha_tentativas_falhas = 0
+    user.senha_bloqueada_ate = None
+    db.commit()
+    db.refresh(user)
+    return _para_saida(user)
+
+
+class SenhaAlternarIn(BaseModel):
+    habilitada: bool
+
+
+@router.post("/senha/alternar", response_model=UsuarioOut)
+def alternar_senha(dados: SenhaAlternarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Liga/desliga o login por senha sem apagar o hash — reativar não pede
+    senha de novo. O código por e-mail nunca é desligável (é a base de
+    recuperação da conta)."""
+    if dados.habilitada and not user.senha_hash:
+        raise HTTPException(status_code=422, detail="Cadastre uma senha antes de ligar este método.")
+    user.senha_habilitada = dados.habilitada
+    db.commit()
+    db.refresh(user)
+    return _para_saida(user)
+
+
+@router.post("/senha/dispensar-prompt", response_model=UsuarioOut)
+def dispensar_prompt_senha(user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """O aluno disse "agora não" pro convite de cadastrar senha — não insiste
+    de novo (o cadastro continua acessível a qualquer momento pelo Perfil)."""
+    user.senha_prompt_dispensado = True
+    db.commit()
+    db.refresh(user)
     return _para_saida(user)

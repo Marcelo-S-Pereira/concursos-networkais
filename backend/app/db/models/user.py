@@ -7,14 +7,28 @@ from app.db.base import Base
 
 
 class User(Base):
-    """Usuário do sistema. Não existe senha em lugar nenhum: o login é por
-    código enviado ao e-mail cadastrado."""
+    """Usuário do sistema. Login por código enviado ao e-mail cadastrado
+    (sempre disponível, é a base de recuperação da conta) — desde [118],
+    também por senha, opcional (`senha_hash` nulo = sem senha; toggle em
+    `senha_habilitada`)."""
 
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nome: Mapped[str] = mapped_column(String(160))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+
+    # [118]: login por senha — opcional, ao lado do código por e-mail (que
+    # continua sempre disponível e é quem faz "esqueci a senha", sem rota
+    # própria — pedir o código de novo já loga direto). `senha_habilitada`
+    # é o único toggle real: liga/desliga sem apagar o hash, reativar não
+    # pede senha de novo. Tentativas/bloqueio são defesa extra de força
+    # bruta, no mesmo espírito do `LoginCode.tentativas`.
+    senha_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    senha_habilitada: Mapped[bool] = mapped_column(Boolean, default=False)
+    senha_tentativas_falhas: Mapped[int] = mapped_column(Integer, default=0)
+    senha_bloqueada_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    senha_prompt_dispensado: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # CPF cifrado (AES-256-GCM) + índice determinístico para localizar por CPF
     # sem guardar o número em claro. Ver app/core/crypto.py. Não é UNIQUE no

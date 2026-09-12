@@ -15,7 +15,7 @@ dependencies = [
     "httpx",
     "pgvector",
     "cryptography",
-    "passlib[bcrypt]",
+    "bcrypt",
     "python-multipart",
     "itsdangerous",
     "yt-dlp",
