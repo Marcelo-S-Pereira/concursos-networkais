@@ -107,9 +107,9 @@ export default function Perfil({
                                 <div className="uso-item"><span className="uso-num">{creditos.total_gasto}</span><span className="uso-rot">total gasto</span></div>
                             </div>
                             <p className="dica">
-                                Simulado, chat de estudo e tutor abrem sozinhos no primeiro uso do dia. Compre mais
-                                créditos na aba de planos (em breve).
+                                Simulado, chat de estudo e tutor abrem sozinhos no primeiro uso do dia.
                             </p>
+                            <ComprarCreditos />
                             {porta && (
                                 <div style={{ marginTop: 10 }}>
                                     <BarraHoje hoje={porta.hoje} />
@@ -178,6 +178,33 @@ export default function Perfil({
                     <Campanhas aoConcluir={aoRecarregarCreditos} />
                 </div>
             )}
+        </div>
+    )
+}
+
+/** [112]: botão real de compra — cria a preferência no Mercado Pago e abre o
+ * checkout numa aba nova. Erro claro (ex: sem plataforma cadastrada) em vez
+ * de fingir que funciona. */
+function ComprarCreditos() {
+    const [carregando, setCarregando] = useState(false)
+    const [erro, setErro] = useState<string | null>(null)
+
+    async function comprar() {
+        setCarregando(true); setErro(null)
+        try {
+            const r = await api.creditosComprar()
+            window.open(r.init_point, "_blank", "noopener")
+        } catch (e) {
+            setErro(e instanceof Error ? e.message : "Não foi possível iniciar a compra.")
+        } finally { setCarregando(false) }
+    }
+
+    return (
+        <div style={{ marginTop: 4 }}>
+            <button disabled={carregando} onClick={comprar}>
+                {carregando ? "Abrindo pagamento…" : "Comprar créditos (Mercado Pago)"}
+            </button>
+            {erro && <p className="falha" style={{ margin: "4px 0 0" }}>{erro}</p>}
         </div>
     )
 }

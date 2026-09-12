@@ -253,6 +253,7 @@ export const api = {
         pedir<{ beneficiados: number }>("/admin/campanha", { method: "POST", body: JSON.stringify({ alvo, quantidade, motivo, limite }) }),
     meusCreditos: () => pedir<CreditosResumo>("/creditos"),
     minhaPorta: () => pedir<MinhaPorta>("/creditos/porta"),
+    creditosComprar: () => pedir<{ init_point: string; creditos: number; preco_reais: number }>("/creditos/comprar", { method: "POST" }),
     chatConversas: (modo: "chat" | "tutor" = "chat") => pedir<Conversa[]>(`/chat/conversas?modo=${modo}`),
     chatCriarConversa: (exam_id: number | null, titulo: string, extra?: { modo?: "chat" | "tutor"; persona?: "professor" | "amigo"; rag_doc_ids?: number[]; modo_voz?: boolean }) =>
         pedir<Conversa>("/chat/conversas", { method: "POST", body: JSON.stringify({ exam_id, titulo, ...extra }) }),
