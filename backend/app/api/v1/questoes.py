@@ -1,3 +1,4 @@
+import base64
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -436,6 +437,50 @@ def explicar(qid: int, dados: ExplicarIn, user: User = Depends(usuario_atual), d
         raise HTTPException(status_code=400, detail=str(e)) from e
     except (AiCallError, ValueError) as e:
         raise HTTPException(status_code=502, detail=f"A IA falhou: {e}") from e
+
+
+@router.post("/questoes/{qid}/passo-a-passo")
+def passo_a_passo(qid: int, dados: ExplicarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """[117]: Tutor por voz guiado — narra a resolução em passos curtos, um
+    de cada vez, pro front tocar em áudio e o aluno acompanhar. Atrás da
+    porta diária, mesmo padrão de `/explicar`."""
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
+    from app.modules.ai_registry.cliente import AiCallError
+    from app.modules.ai_registry.servico import SemConexaoIA
+    from app.modules.tutor.tutor import gerar_passo_a_passo
+
+    q = db.get(Question, qid)
+    if not q:
+        raise HTTPException(status_code=404, detail="Questão não encontrada.")
+    try:
+        return {"passos": gerar_passo_a_passo(db, q, user.id)}
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except (AiCallError, ValueError) as e:
+        raise HTTPException(status_code=502, detail=f"A IA falhou: {e}") from e
+
+
+class FalarIn(BaseModel):
+    texto: str
+
+
+@router.post("/questoes/{qid}/passo-a-passo/falar")
+def passo_a_passo_falar(qid: int, dados: FalarIn, user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """[117]: fala UM passo já gerado (TTS) — a porta já estava aberta pra
+    gerar os passos; aqui só sintetiza o áudio de um trecho já pronto."""
+    if not dados.texto.strip():
+        raise HTTPException(status_code=422, detail="Texto vazio.")
+    from app.modules.ai_registry.cliente import AiCallError
+    from app.modules.ai_registry.servico import SemConexaoIA, falar_texto
+
+    try:
+        audio = falar_texto(db, dados.texto.strip(), origem="tutor_passo_a_passo_tts", user_id=user.id)
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except AiCallError as e:
+        raise HTTPException(status_code=502, detail=f"A voz falhou: {e}") from e
+    return {"audio_b64": base64.b64encode(audio).decode()}
 
 
 class GemeaOut(BaseModel):

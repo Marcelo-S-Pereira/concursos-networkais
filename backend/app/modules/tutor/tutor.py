@@ -126,3 +126,42 @@ def explicar_questao(db: Session, questao: Question, user_id: int, student_answe
         db.rollback()
 
     return saida
+
+
+# [117]: Tutor por voz guiado — narra a resolução em PASSOS curtos, um de
+# cada vez, pra tocar em áudio e o aluno acompanhar (botão ou voz avançam).
+SISTEMA_PASSOS = (
+    "Você é um tutor que explica a RESOLUÇÃO de uma questão de concurso passo a passo, "
+    "narrando como se estivesse falando em voz alta pro aluno acompanhar um passo de cada "
+    "vez — o aplicativo toca cada passo em áudio, um por vez. Quebre o raciocínio completo "
+    "— do que a questão pede até chegar na alternativa correta — em PASSOS CURTOS e "
+    "sequenciais (4 a 8 passos), cada um com 1 a 3 frases, em português falado, natural, "
+    "sem símbolo de markdown, sem lista dentro do passo (o texto vai direto pra um "
+    "sintetizador de voz). Se for cálculo, narre cada operação e o resultado parcial "
+    "('primeiro calculamos... o que dá...'). Se for geometria, descreva a figura e cada "
+    "dedução. Se a questão não for de cálculo/geometria, narre o raciocínio lógico em "
+    "etapas do mesmo jeito. O gabarito já foi decidido pelo backend — nunca contradiga a "
+    "resposta correta informada.\n\n"
+    'Devolva SOMENTE um JSON válido: {"passos": ["...", "..."]}'
+)
+
+
+def gerar_passo_a_passo(db: Session, questao: Question, user_id: int) -> list[str]:
+    alternativas = "\n".join(f"({c.letra}) {c.texto}" for c in questao.alternativas)
+    texto_correta = next((c.texto for c in questao.alternativas if c.letra == questao.gabarito), None)
+    prompt = (
+        f"Disciplina: {questao.disciplina}\n"
+        f"Enunciado: {questao.enunciado}\n"
+        f"Alternativas:\n{alternativas}\n"
+        f"Resposta correta (gabarito do backend): {questao.gabarito}"
+        + (f' — "{texto_correta}"' if texto_correta else "") + "\n"
+        "Narre a resolução completa em passos curtos, conforme as instruções do sistema."
+    )
+    mensagens = [{"role": "system", "content": SISTEMA_PASSOS}, {"role": "user", "content": prompt}]
+    resposta = servico.conversar(db, "texto", mensagens, origem="tutor_passo_a_passo", max_tokens=1500,
+                                 user_id=user_id)
+    dados = _parse_json_tolerante(resposta)
+    passos = [str(p).strip() for p in (dados.get("passos") or []) if str(p).strip()]
+    if not passos:
+        passos = ["Não consegui montar os passos desta questão — tente 'Explicar' ou 'Mini-aula' em vez disso."]
+    return passos[:10]  # teto de segurança contra resposta anormalmente longa
