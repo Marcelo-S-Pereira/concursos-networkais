@@ -1,5 +1,10 @@
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { api, type ChatMsg, type Conversa, type Exame, type GemeaT, type LimitesUso, type MeuRecurso, type ModelosChat, type Questao, type VideoResultado } from "./api"
+import { api, type ChatMsg, type Conversa, type DocChat, type Exame, type GemeaT, type LimitesUso, type MeuRecurso, type ModelosChat, type Questao, type VideoResultado } from "./api"
+
+/** [115]: questão anotada com o caderno de origem — necessário quando a
+ *  conversa reúne mais de um caderno (o número Q1 de um pode colidir com o
+ *  Q1 de outro; `examId` desambigua). */
+type QuestaoCad = Questao & { examId: number }
 
 /** Texto puro a partir do HTML do enunciado — só para preview, nunca renderizado como HTML. */
 function semHtml(t: string) {
@@ -14,16 +19,19 @@ const ACOES = [
     { id: "macete", rot: "💡 Macete", curto: "Macete", prompt: (n: number) => `Dê um macete para a questão Q${n}: gancho de memória, regra rápida, os passos, quando usar e quando NÃO usar.` },
     {
         id: "videos", rot: "▶ Vídeos", curto: "Vídeos",
-        prompt: (n: number) => `Quero vídeos BONS para entender a Q${n} — não resultado genérico. Dê de 3 a 5 termos de busca ` +
-            `ESPECÍFICOS para o YouTube: cada um combinando a disciplina, o conceito exato da questão e uma palavra como ` +
-            `"aula", "resolução comentada" ou "explicação passo a passo", do jeito que encontraria um vídeo didático de ` +
-            `verdade. Antes deles, uma frase dizendo o que procurar. Cada termo numa linha própria começando com "BUSCAR: ".`,
+        prompt: (n: number) => `Quero vídeos que expliquem A QUESTÃO Q${n} desta prova de concurso, não uma aula genérica ` +
+            `do tema. Dê de 3 a 5 termos de busca ESPECÍFICOS para o YouTube: combine a banca do caderno (se você souber ` +
+            `pelo contexto), a disciplina/conceito exato da questão, e uma palavra como "questão comentada", "resolução ` +
+            `comentada" ou "prova comentada" — nunca só "aula de [tema]" solto. Antes deles, uma frase dizendo o que ` +
+            `procurar. Cada termo numa linha própria começando com "BUSCAR: ".`,
     },
 ]
 
 /** Mesmo padrão que o backend usa em chat.py (_RE_RESPOSTA) — deriva quem já
- *  respondeu qual questão a partir do próprio histórico, sem estado paralelo. */
-const RE_RESPOSTA = /^Minha resposta da Q(\d+):\s*([A-E])\s*$/i
+ *  respondeu qual questão a partir do próprio histórico, sem estado paralelo.
+ *  [115]: prefixo "Q{examId}.{numero}" opcional — só usado com mais de 1
+ *  caderno selecionado na conversa (senão "Q{numero}" sozinho, como sempre). */
+const RE_RESPOSTA = /^Minha resposta da Q(?:(\d+)\.)?(\d+):\s*([A-E])\s*$/i
 
 /** Linha "BUSCAR: termo" da resposta — o modelo não navega, então nunca dá o
  *  link do vídeo; o link de busca simples é sempre a reserva (funciona sem
@@ -389,17 +397,23 @@ function Ritmo({ l }: { l: LimitesUso }) {
 export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     const [conversas, setConversas] = useState<Conversa[]>([])
     const [cadernos, setCadernos] = useState<Exame[]>([])
+    const [docsChat, setDocsChat] = useState<DocChat[]>([])
     const [modelos, setModelos] = useState<ModelosChat | null>(null)
     const [ativa, setAtiva] = useState<number | null>(null)
     const [msgs, setMsgs] = useState<ChatMsg[]>([])
-    const [questoes, setQuestoes] = useState<Questao[]>([])
+    const [questoes, setQuestoes] = useState<QuestaoCad[]>([])
     const [texto, setTexto] = useState("")
     const [qid, setQid] = useState<number | "">("")
     const [anexo, setAnexo] = useState<{ nome: string; b64: string } | null>(null)
     const [enviando, setEnviando] = useState(false)
     const [erro, setErro] = useState<string | null>(null)
     const [novaAberta, setNovaAberta] = useState(false)
-    const [novoCaderno, setNovoCaderno] = useState<number | "">("")
+    // [115]: múltiplos cadernos e múltiplas fontes RAG numa conversa só,
+    // mais o modo de escolha de questão (normal = aluno escolhe; random = o
+    // backend sorteia entre os cadernos escolhidos).
+    const [novosCadernos, setNovosCadernos] = useState<Set<number>>(new Set())
+    const [novasFontesRag, setNovasFontesRag] = useState<Set<number>>(new Set())
+    const [novoModoQuestao, setNovoModoQuestao] = useState<"normal" | "random">("normal")
     const [limites, setLimites] = useState<LimitesUso | null>(null)
     const [cfgAberta, setCfgAberta] = useState(false)
     const [anexarAberta, setAnexarAberta] = useState(false)
@@ -488,6 +502,7 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     useEffect(() => {
         carregarConversas()
         api.exames().then(setCadernos).catch(() => setCadernos([]))
+        api.chatDocumentosRag().then(setDocsChat).catch(() => setDocsChat([]))
         api.chatModelos().then(setModelos).catch(() => setModelos(null))
         api.chatLimites().then(setLimites).catch(() => setLimites(null))
         api.chatRecursos().then(setRecursos).catch(() => setRecursos({}))
@@ -496,8 +511,12 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
         if (ativa == null) { setMsgs([]); setQuestoes([]); setQid(""); return }
         api.chatMensagens(ativa).then((d) => {
             setMsgs(d.mensagens)
-            if (d.exam_id) api.questoes(d.exam_id).then((qs) => setQuestoes(qs.filter((q) => !q.descartada))).catch(() => setQuestoes([]))
-            else setQuestoes([])
+            const ids = d.exam_ids?.length ? d.exam_ids : (d.exam_id ? [d.exam_id] : [])
+            if (ids.length) {
+                Promise.all(ids.map((eid) =>
+                    api.questoes(eid).then((qs) => qs.filter((q) => !q.descartada).map((q) => ({ ...q, examId: eid })))
+                )).then((listas) => setQuestoes(listas.flat())).catch(() => setQuestoes([]))
+            } else setQuestoes([])
         }).catch(() => {})
     }, [ativa])
     useEffect(() => { fim.current?.scrollIntoView({ behavior: "smooth" }) }, [msgs])
@@ -507,29 +526,45 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
 
     const conversa = conversas.find((c) => c.id === ativa) ?? null
     const emFoco = questoes.find((q) => q.id === qid) ?? null
+    const examIdsConversa = conversa?.exam_ids ?? []
     // Deriva do próprio histórico — mesma fonte de verdade que o backend usa em
     // chat.py (_respondidas). Nenhum estado paralelo pra desincronizar.
-    const respondidas = new Map<number, string>()
+    // [115]: chave (examId.numero) — com 1 caderno só, "Qn" sem prefixo resolve
+    // pro único exam_id; com mais de 1, mensagem sem prefixo é ambígua e é
+    // ignorada (nunca revela gabarito por engano, mesma regra do backend).
+    const respondidas = new Map<string, string>()
     for (const m of msgs) {
         if (m.role !== "user") continue
         const r = RE_RESPOSTA.exec(m.conteudo)
-        if (r) respondidas.set(Number(r[1]), r[2].toUpperCase())
+        if (!r) continue
+        const eid = r[1] ? Number(r[1]) : (examIdsConversa.length === 1 ? examIdsConversa[0] : null)
+        if (eid != null) respondidas.set(`${eid}.${r[2]}`, r[3].toUpperCase())
     }
-    const respostaFoco = emFoco ? respondidas.get(emFoco.numero) : undefined
+    const respostaFoco = emFoco ? respondidas.get(`${emFoco.examId}.${emFoco.numero}`) : undefined
     const pedindoResposta = emFoco != null && pedindoQid === emFoco.id
     const mostrandoGemeaFlutuante = gemeaIdx >= 0 && !!gemeas[gemeaIdx]
     const mostrandoPrincipalFlutuante = !!emFoco && !respostaFoco && pedindoResposta && gemeaIdx < 0
     const mostrandoFlutuante = mostrandoGemeaFlutuante || mostrandoPrincipalFlutuante
-    const caderno = cadernos.find((c) => c.id === conversa?.exam_id) ?? null
+    const cadernosDaConversa = cadernos.filter((c) => examIdsConversa.includes(c.id))
     const modeloTextoLabel = conversa?.modelo_texto_id
         ? modelos?.texto.find((m) => m.id === conversa.modelo_texto_id)?.nome ?? "IA"
         : "Padrão do sistema"
 
+    function alternarNovoCaderno(id: number) {
+        setNovosCadernos((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+    }
+    function alternarNovaFonteRag(id: number) {
+        setNovasFontesRag((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+    }
+
     async function novaConversa() {
         setErro(null)
         try {
-            const c = await api.chatCriarConversa(novoCaderno === "" ? null : Number(novoCaderno), "Nova conversa")
-            setNovaAberta(false); setNovoCaderno(""); await carregarConversas(); setAtiva(c.id)
+            const c = await api.chatCriarConversa([...novosCadernos], "Nova conversa", {
+                modo_questao: novoModoQuestao, rag_doc_ids: [...novasFontesRag],
+            })
+            setNovaAberta(false); setNovosCadernos(new Set()); setNovasFontesRag(new Set()); setNovoModoQuestao("normal")
+            await carregarConversas(); setAtiva(c.id)
         } catch (e: unknown) {
             setErro(e instanceof Error ? e.message : "Não foi possível criar a conversa.")
         }
@@ -864,10 +899,28 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
      *  verdade; a automação só caminha pelas etapas em ordem, sempre com
      *  "Sim"/"Pular" antes de cada uma (bug relatado: antes disparava tudo
      *  de uma vez, sem perguntar — corrigido). */
-    async function responderPrincipal(q: Questao, letra: string) {
+    async function responderPrincipal(q: QuestaoCad, letra: string) {
         setResultadosSessao((s) => ({ ...s, letraPrincipal: letra }))
-        await mandar(`Minha resposta da Q${q.numero}: ${letra}`, false, `Q${q.numero} · resposta`)
+        // [115]: prefixo só quando a conversa tem mais de 1 caderno — com 1 só,
+        // formato idêntico a sempre foi ("Minha resposta da Q{n}: {letra}").
+        const rotulo = examIdsConversa.length > 1 ? `${q.examId}.${q.numero}` : String(q.numero)
+        await mandar(`Minha resposta da Q${rotulo}: ${letra}`, false, `Q${q.numero} · resposta`)
         if (modoEstudo === "automatico") setOfertaAutomatica("aula")
+    }
+
+    /** [115]: modo "random" — pede ao backend pra sortear uma questão entre
+     *  os cadernos da conversa e imprime como o "Ler questão" de sempre. */
+    async function questaoAleatoria() {
+        if (ativa == null || enviando) return
+        setEnviando(true); setErro(null)
+        try {
+            const r = await api.chatQuestaoAleatoria(ativa)
+            setMsgs((m) => [...m, { role: "assistant", conteudo: r.conteudo, question_id: r.question_id }])
+            setQid(r.question_id)
+            setPedindoQid(r.question_id)
+        } catch (e) {
+            setErro(e instanceof Error ? e.message : "Não foi possível sortear uma questão.")
+        } finally { setEnviando(false) }
     }
 
     const OFERTAS_AUTO: Record<"aula" | "macete" | "gemeas", { pergunta: string; sim: string }> = {
@@ -972,7 +1025,10 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                         ) : (
                             <>
                                 <p className="chat-caderno">
-                                    📗 {caderno ? `${caderno.orgao} · ${caderno.cargo}` : "Todos os cadernos"}
+                                    📗 {cadernosDaConversa.length
+                                        ? cadernosDaConversa.map((c) => `${c.orgao} · ${c.cargo}`).join(" + ")
+                                        : "Sem caderno — conversa livre"}
+                                    {conversa?.modo_questao === "random" && " · 🎲 modo aleatório"}
                                 </p>
                                 <p className="popup-vazio">A questão em estudo agora se escolhe embaixo do campo de
                                     mensagem, do lado da conversa.</p>
@@ -992,13 +1048,40 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                     <div className="chat-box-corpo">
                         {novaAberta && (
                             <div className="chat-nova">
-                                <label>Caderno para estudar
-                                    <select value={novoCaderno} onChange={(e) => setNovoCaderno(e.target.value === "" ? "" : Number(e.target.value))}>
-                                        <option value="">Todos os cadernos</option>
-                                        {cadernos.map((c) => <option key={c.id} value={c.id}>{c.orgao} · {c.cargo}</option>)}
+                                <p className="dica" style={{ margin: "0 0 4px" }}>Cadernos (nenhum = conversa livre, sem caderno):</p>
+                                <div className="rag-uso" style={{ marginBottom: 8 }}>
+                                    {cadernos.map((c) => (
+                                        <label key={c.id}>
+                                            <input type="checkbox" checked={novosCadernos.has(c.id)} onChange={() => alternarNovoCaderno(c.id)} />
+                                            {c.orgao} · {c.cargo}
+                                        </label>
+                                    ))}
+                                    {!cadernos.length && <p className="dica">Nenhum caderno cadastrado ainda.</p>}
+                                </div>
+                                {docsChat.length > 0 && (
+                                    <>
+                                        <p className="dica" style={{ margin: "0 0 4px" }}>Fontes da biblioteca (opcional, vazio = usa todas classificadas "Chat de estudos"):</p>
+                                        <div className="rag-uso" style={{ marginBottom: 8 }}>
+                                            {docsChat.map((d) => (
+                                                <label key={d.id} title={d.descricao}>
+                                                    <input type="checkbox" disabled={!d.indexado} checked={novasFontesRag.has(d.id)} onChange={() => alternarNovaFonteRag(d.id)} />
+                                                    {d.titulo}
+                                                    {!d.indexado && <span className="dica"> · 🕓 em análise</span>}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                                <label>Escolha da questão
+                                    <select value={novoModoQuestao} onChange={(e) => setNovoModoQuestao(e.target.value as "normal" | "random")}>
+                                        <option value="normal">🎯 Normal — eu escolho a questão</option>
+                                        <option value="random">🎲 Aleatório — o sistema sorteia do(s) caderno(s)</option>
                                     </select>
                                 </label>
-                                <button onClick={novaConversa}>Criar conversa</button>
+                                {novoModoQuestao === "random" && !novosCadernos.size && (
+                                    <p className="falha" style={{ margin: "4px 0 0" }}>Escolha pelo menos um caderno para o modo aleatório.</p>
+                                )}
+                                <button disabled={novoModoQuestao === "random" && !novosCadernos.size} onClick={novaConversa}>Criar conversa</button>
                                 {erro && <p className="falha" style={{ margin: "4px 0 0" }}>{erro}</p>}
                             </div>
                         )}
@@ -1197,12 +1280,22 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                             não mais no painel de configurações à esquerda. */}
                         {questoes.length > 0 && (
                             <div className="chat-questao-picker">
-                                <label>Questão em estudo
-                                    <select value={qid} onChange={(e) => setQid(e.target.value === "" ? "" : Number(e.target.value))}>
-                                        <option value="">— escolher —</option>
-                                        {questoes.map((q) => <option key={q.id} value={q.id}>Q{q.numero} · {q.disciplina}{q.tem_figura ? " 🖼" : ""}</option>)}
-                                    </select>
-                                </label>
+                                {conversa?.modo_questao === "random" ? (
+                                    <button disabled={enviando} onClick={questaoAleatoria} style={{ width: "100%" }}>
+                                        🎲 Questão aleatória
+                                    </button>
+                                ) : (
+                                    <label>Questão em estudo
+                                        <select value={qid} onChange={(e) => setQid(e.target.value === "" ? "" : Number(e.target.value))}>
+                                            <option value="">— escolher —</option>
+                                            {questoes.map((q) => (
+                                                <option key={q.id} value={q.id}>
+                                                    Q{examIdsConversa.length > 1 ? `${q.examId}.${q.numero}` : q.numero} · {q.disciplina}{q.tem_figura ? " 🖼" : ""}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                )}
                                 {emFoco && (
                                     <div className="chat-foco">
                                         <p className="chat-foco-enun">{semHtml(emFoco.pergunta || emFoco.enunciado).slice(0, 150) || "(sem enunciado)"}…</p>

@@ -100,7 +100,7 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
     async function novaConversa() {
         setErro(null)
         try {
-            const c = await api.chatCriarConversa(null, novoTitulo.trim() || "Nova conversa",
+            const c = await api.chatCriarConversa([], novoTitulo.trim() || "Nova conversa",
                 { modo: "tutor", persona: novaPersona, rag_doc_ids: [...novaSelecao] })
             setNovaAberta(false); setNovoTitulo(""); setNovaSelecao(new Set())
             await carregarConversas()

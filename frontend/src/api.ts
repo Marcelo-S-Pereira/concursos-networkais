@@ -74,8 +74,8 @@ export type RecursoCatalogo = Record<string, { nome: string; unidade: string; cu
 export type MeuRecurso = { liberado: boolean; limite_diario: number | null; usado_hoje: number }
 export type YoutubeUso = { buscas_hoje: number; unidades_hoje: number; cota_diaria_unidades: number; pct: number }
 export type Conversa = {
-    id: number; exam_id: number | null; titulo: string
-    modo: "chat" | "tutor"; persona: "professor" | "amigo"; rag_doc_ids: number[]
+    id: number; exam_id: number | null; exam_ids: number[]; titulo: string
+    modo: "chat" | "tutor"; persona: "professor" | "amigo"; modo_questao: "normal" | "random"; rag_doc_ids: number[]
     modelo_texto_id: number | null; modelo_visao_id: number | null
     modelo_voz_id: number | null; modelo_transcricao_id: number | null; modo_voz: boolean
 }
@@ -83,6 +83,7 @@ export type DocTutor = {
     id: number; titulo: string; descricao: string; indexado: boolean
     tentativas_indexacao: number; enviado_por: string | null
 }
+export type DocChat = { id: number; titulo: string; descricao: string; indexado: boolean; tentativas_indexacao: number }
 export type ModeloOpcao = { id: number; nome: string; modelo: string; ativa: boolean }
 export type ModelosChat = { texto: ModeloOpcao[]; visao: ModeloOpcao[]; voz: ModeloOpcao[]; transcricao: ModeloOpcao[] }
 export type EditarConversaIn = {
@@ -255,12 +256,15 @@ export const api = {
     minhaPorta: () => pedir<MinhaPorta>("/creditos/porta"),
     creditosComprar: () => pedir<{ init_point: string; creditos: number; preco_reais: number }>("/creditos/comprar", { method: "POST" }),
     chatConversas: (modo: "chat" | "tutor" = "chat") => pedir<Conversa[]>(`/chat/conversas?modo=${modo}`),
-    chatCriarConversa: (exam_id: number | null, titulo: string, extra?: { modo?: "chat" | "tutor"; persona?: "professor" | "amigo"; rag_doc_ids?: number[]; modo_voz?: boolean }) =>
-        pedir<Conversa>("/chat/conversas", { method: "POST", body: JSON.stringify({ exam_id, titulo, ...extra }) }),
+    chatCriarConversa: (exam_ids: number[], titulo: string, extra?: { modo?: "chat" | "tutor"; persona?: "professor" | "amigo"; modo_questao?: "normal" | "random"; rag_doc_ids?: number[]; modo_voz?: boolean }) =>
+        pedir<Conversa>("/chat/conversas", { method: "POST", body: JSON.stringify({ exam_ids, titulo, ...extra }) }),
     chatMensagens: (cid: number) => pedir<Conversa & { mensagens: ChatMsg[] }>(`/chat/conversas/${cid}`),
     chatModelos: () => pedir<ModelosChat>("/chat/modelos"),
     chatEditarConversa: (cid: number, d: EditarConversaIn) =>
         pedir<Conversa>(`/chat/conversas/${cid}`, { method: "PATCH", body: JSON.stringify(d) }),
+    chatDocumentosRag: () => pedir<DocChat[]>("/chat/documentos-rag"),
+    chatQuestaoAleatoria: (cid: number) =>
+        pedir<{ question_id: number; conteudo: string }>(`/chat/conversas/${cid}/questao-aleatoria`, { method: "POST" }),
     chatEnviar: (cid: number, texto: string, question_id: number | null, imagem_b64?: string | null) => pedir<{ resposta: string; saldo: number; limites: LimitesUso }>(`/chat/conversas/${cid}/mensagem`, { method: "POST", body: JSON.stringify({ texto, question_id, imagem_b64: imagem_b64 ?? null }) }),
     chatEnviarAudio: async (cid: number, blob: Blob, question_id: number | null) => {
         const fd = new FormData()
