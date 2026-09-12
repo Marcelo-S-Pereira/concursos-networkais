@@ -639,6 +639,16 @@ button.ia:hover { background: #5b21b6; }
 .oferta-auto span { flex: 1; font-size: .82rem; }
 .oferta-auto button { min-height: 0; padding: 6px 12px; font-size: .78rem; }
 
+/* [117]: Tutor por voz guiado — passos narrados um de cada vez. */
+.passo-a-passo { margin-top: 8px; max-width: 420px; margin-left: auto; margin-right: auto; width: 100%;
+                border: 1px solid var(--borda); border-radius: 10px; padding: 10px; background: var(--fundo); }
+.passo-a-passo-cab { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.passo-a-passo-contador { margin: 0 0 4px; font-size: .72rem; color: var(--suave); }
+.passo-a-passo-texto { margin: 0 0 10px; font-size: .88rem; line-height: 1.5; }
+.passo-a-passo-botoes { display: flex; gap: 8px; margin-bottom: 8px; }
+.passo-a-passo-botoes button { flex: 1; }
+.passo-a-passo-voz { display: flex; align-items: center; gap: 6px; font-size: .76rem; color: var(--suave); cursor: pointer; }
+
 /* Popup único de recursos manuais (🎓): seletor A-E do gate + as 5 ações. */
 .popup-acoes { width: min(280px, 100%); }
 .resposta-gate { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }

@@ -232,6 +232,10 @@ export const api = {
     responderGemea: (twinId: number, letra: string) => pedir<{ acertou: boolean; gabarito: string }>(`/exames/gemeas/${twinId}/responder`, { method: "POST", body: JSON.stringify({ letra }) }),
     explicarIA: (qid: number, student_answer: string | null) =>
         pedir<Explicacao>(`/exames/questoes/${qid}/explicar`, { method: "POST", body: JSON.stringify({ student_answer }) }),
+    passoAPasso: (qid: number, student_answer: string | null) =>
+        pedir<{ passos: string[] }>(`/exames/questoes/${qid}/passo-a-passo`, { method: "POST", body: JSON.stringify({ student_answer }) }),
+    falarPasso: (qid: number, texto: string) =>
+        pedir<{ audio_b64: string }>(`/exames/questoes/${qid}/passo-a-passo/falar`, { method: "POST", body: JSON.stringify({ texto }) }),
     transcreverIA: (qid: number) => pedir<{ enunciado: string; alternativas: Record<string, string> }>(`/exames/questoes/${qid}/transcrever`, { method: "POST" }),
     restaurarFigura: (qid: number) => pedir<{ ok: boolean }>(`/exames/questoes/${qid}/figura/restaurar`, { method: "POST" }),
     corrigir: (examId: number, respostas: Record<number, string>, tempos?: Record<number, number>) =>

@@ -182,7 +182,7 @@ function PopupAnexar({ onArquivo, onCaptura }: { onArquivo: () => void; onCaptur
  *  enquanto — Automático ainda não tem comportamento definido. */
 function PopupAcoes({
     emFoco, respondida, pedindo, gemeaAtual, enviando, modoEstudo,
-    onPedir, onResponder, onAcao, onGemeas, onResponderGemea, onTrocarModo,
+    onPedir, onResponder, onAcao, onGemeas, onResponderGemea, onTrocarModo, onPassoAPasso,
 }: {
     emFoco: Questao | null
     respondida: string | undefined
@@ -196,6 +196,7 @@ function PopupAcoes({
     onGemeas: () => void
     onResponderGemea: (letra: string) => void
     onTrocarModo: (modo: "manual" | "automatico") => void
+    onPassoAPasso: () => void
 }) {
     const letras = emFoco?.alternativas?.length ? emFoco.alternativas.map((a) => a.letra) : ["A", "B", "C", "D", "E"]
     const letrasGemea = gemeaAtual ? Object.keys(gemeaAtual.alternativas).sort() : []
@@ -231,6 +232,9 @@ function PopupAcoes({
                         <button className="popup-linha" disabled={enviando} onClick={onGemeas}>
                             <span>👯 Questões gêmeas</span>
                         </button>
+                        <button className="popup-linha" disabled={enviando} onClick={onPassoAPasso}>
+                            <span>🧮 Passo a passo narrado</span>
+                        </button>
                         {ACOES.map((a) => (
                             <button key={a.id} className="popup-linha" disabled={enviando} onClick={() => onAcao(a)}>
                                 <span>{a.rot}</span>
@@ -262,6 +266,106 @@ function PopupAcoes({
                 )}
             </div>
         </Popup>
+    )
+}
+
+/** [117]: Tutor por voz guiado — toca os passos um de cada vez (TTS), com
+ *  botão "▶ Próximo" sempre visível e um toggle de avanço automático por voz
+ *  (fala qualquer coisa depois que o áudio termina = avança, reaproveitando
+ *  `escutarUmaFala`). Áudio de cada passo é buscado uma vez e guardado
+ *  (troca de passo pra trás/repetir não paga de novo). */
+function PassoAPassoPlayer({ qid, respondida, onFechar }: { qid: number; respondida: string | undefined; onFechar: () => void }) {
+    const [passos, setPassos] = useState<string[] | null>(null)
+    const [idx, setIdx] = useState(0)
+    const [carregando, setCarregando] = useState(true)
+    const [erro, setErro] = useState<string | null>(null)
+    const [vozAtiva, setVozAtiva] = useState(false)
+    const [escutando, setEscutando] = useState(false)
+    const audioRef = useRef<HTMLAudioElement>(null)
+    const cacheAudioRef = useRef<Map<number, string>>(new Map())
+    const pararEscutaRef = useRef<(() => void) | null>(null)
+    const vozAtivaRef = useRef(false)
+    useEffect(() => { vozAtivaRef.current = vozAtiva }, [vozAtiva])
+
+    useEffect(() => {
+        api.passoAPasso(qid, respondida ?? null)
+            .then((r) => setPassos(r.passos))
+            .catch((e) => setErro(e instanceof Error ? e.message : "Não foi possível montar os passos."))
+            .finally(() => setCarregando(false))
+        // desliga a escuta se o player fechar/desmontar — nunca deixa o mic aberto sozinho
+        return () => { pararEscutaRef.current?.(); pararEscutaRef.current = null }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [qid])
+
+    async function tocarPasso(i: number) {
+        if (!passos || !passos[i]) return
+        setErro(null)
+        let src = cacheAudioRef.current.get(i)
+        if (!src) {
+            try {
+                const r = await api.falarPasso(qid, passos[i])
+                src = `data:audio/mpeg;base64,${r.audio_b64}`
+                cacheAudioRef.current.set(i, src)
+            } catch (e) {
+                setErro(e instanceof Error ? e.message : "Falha ao gerar o áudio deste passo.")
+                return
+            }
+        }
+        if (audioRef.current) { audioRef.current.src = src; void audioRef.current.play() }
+    }
+
+    useEffect(() => { if (passos) void tocarPasso(idx) }, [passos, idx])  // eslint-disable-line react-hooks/exhaustive-deps
+
+    function avancar() {
+        pararEscutaRef.current?.(); pararEscutaRef.current = null
+        setIdx((i) => (passos && i < passos.length - 1 ? i + 1 : i))
+    }
+
+    function aoTerminarAudio() {
+        setEscutando(false)
+        if (vozAtivaRef.current && passos && idx < passos.length - 1) {
+            setEscutando(true)
+            pararEscutaRef.current = escutarUmaFala(() => { setEscutando(false); avancar() })
+        }
+    }
+
+    function alternarVoz() {
+        setVozAtiva((v) => {
+            const novo = !v
+            if (!novo) { pararEscutaRef.current?.(); pararEscutaRef.current = null; setEscutando(false) }
+            return novo
+        })
+    }
+
+    const ultimo = !!passos && idx === passos.length - 1
+
+    return (
+        <div className="passo-a-passo">
+            <div className="passo-a-passo-cab">
+                <strong>🧮 Passo a passo narrado</strong>
+                <button className="link" onClick={() => { pararEscutaRef.current?.(); onFechar() }}>fechar ✕</button>
+            </div>
+            {carregando && <p className="dica">Montando os passos…</p>}
+            {erro && <p className="falha">{erro}</p>}
+            {passos && (
+                <>
+                    <p className="passo-a-passo-contador">Passo {idx + 1} de {passos.length}</p>
+                    <p className="passo-a-passo-texto">{passos[idx]}</p>
+                    <audio ref={audioRef} onEnded={aoTerminarAudio} hidden />
+                    <div className="passo-a-passo-botoes">
+                        <button className="secundario" onClick={() => void tocarPasso(idx)}>🔁 Repetir</button>
+                        {!ultimo
+                            ? <button onClick={avancar}>▶ Próximo passo</button>
+                            : <button onClick={onFechar}>✓ Concluir</button>}
+                    </div>
+                    <label className="passo-a-passo-voz">
+                        <input type="checkbox" checked={vozAtiva} onChange={alternarVoz} />
+                        🎤 Avançar por voz (fale algo quando terminar de ouvir)
+                    </label>
+                    {escutando && <p className="dica">🎙️ ouvindo…</p>}
+                </>
+            )}
+        </div>
     )
 }
 
@@ -306,6 +410,65 @@ function calcularRms(analiser: AnalyserNode, buffer: Float32Array<ArrayBuffer>):
     let soma = 0
     for (let i = 0; i < buffer.length; i++) soma += buffer[i] * buffer[i]
     return Math.sqrt(soma / buffer.length)
+}
+
+/** [117]: escuta UMA fala só (não grava, não transcreve, não manda pro
+ *  servidor) — pro avanço por voz do passo a passo narrado. Calibra o ruído
+ *  ambiente por ~600ms, abre o microfone, e chama `onDetectada()` assim que
+ *  o volume ficar sustentado acima do limiar por ~200ms (mesma técnica RMS
+ *  do mãos-livres [096], mas um disparo simples — sem gravar nem enviar
+ *  áudio nenhum, só "o aluno fez barulho = quer continuar"). Devolve uma
+ *  função de parar, pra cancelar se o componente desmontar ou o aluno
+ *  avançar pelo botão antes. */
+function escutarUmaFala(onDetectada: () => void): () => void {
+    let parado = false
+    let ctx: AudioContext | null = null
+    let stream: MediaStream | null = null
+    let raf: number | null = null
+
+    navigator.mediaDevices?.getUserMedia({ audio: true }).then((s) => {
+        if (parado) { s.getTracks().forEach((t) => t.stop()); return }
+        stream = s
+        ctx = new AudioContext()
+        const fonte = ctx.createMediaStreamSource(s)
+        const analiser = ctx.createAnalyser()
+        analiser.fftSize = 2048
+        fonte.connect(analiser)
+        const buffer = new Float32Array(analiser.fftSize) as Float32Array<ArrayBuffer>
+
+        let amostrasRuido: number[] = []
+        let limiar = 0.02
+        const inicioCalibragem = performance.now()
+        let inicioFala: number | null = null
+
+        function loop() {
+            if (parado || !ctx || !analiser) return
+            const nivel = calcularRms(analiser, buffer)
+            const agora = performance.now()
+            if (agora - inicioCalibragem < 600) {
+                amostrasRuido.push(nivel)
+            } else if (amostrasRuido.length) {
+                const media = amostrasRuido.reduce((a, b) => a + b, 0) / amostrasRuido.length
+                limiar = Math.max(0.012, media + 0.018)
+                amostrasRuido = []
+            } else if (nivel > limiar) {
+                if (inicioFala == null) inicioFala = agora
+                if (agora - inicioFala >= 200) { pararEscuta(); onDetectada(); return }
+            } else {
+                inicioFala = null
+            }
+            raf = requestAnimationFrame(loop)
+        }
+        raf = requestAnimationFrame(loop)
+    }).catch(() => { /* sem microfone — o aluno segue com o botão manual */ })
+
+    function pararEscuta() {
+        parado = true
+        if (raf != null) cancelAnimationFrame(raf)
+        stream?.getTracks().forEach((t) => t.stop())
+        void ctx?.close()
+    }
+    return pararEscuta
 }
 
 export type EstadoMic = { count: number; erro: string | null } | null
@@ -419,6 +582,7 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     const [anexarAberta, setAnexarAberta] = useState(false)
     const [vozAberta, setVozAberta] = useState(false)
     const [acoesAberta, setAcoesAberta] = useState(false)
+    const [passoAPassoAberto, setPassoAPassoAberto] = useState(false)
     // Só mostra o seletor A-E depois de pedido explicitamente ("Responder esta
     // questão"/[089]) — nunca sozinho ao escolher a questão. Guardar o id (não
     // um bool solto) faz trocar de questão resetar o pedido de graça, por
@@ -522,7 +686,7 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     useEffect(() => { fim.current?.scrollIntoView({ behavior: "smooth" }) }, [msgs])
     // Trocar de questão no seletor encerra qualquer sequência de gêmeas em
     // andamento — elas pertencem à questão anterior, não fazem sentido soltas.
-    useEffect(() => { setGemeas([]); setGemeaIdx(-1); setResultadosSessao({ letraPrincipal: null, gemeaOks: [] }); setOfertaAutomatica(null) }, [qid])
+    useEffect(() => { setGemeas([]); setGemeaIdx(-1); setResultadosSessao({ letraPrincipal: null, gemeaOks: [] }); setOfertaAutomatica(null); setPassoAPassoAberto(false) }, [qid])
 
     const conversa = conversas.find((c) => c.id === ativa) ?? null
     const emFoco = questoes.find((q) => q.id === qid) ?? null
@@ -1219,6 +1383,7 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                                     }}
                                                     onGemeas={() => emFoco && iniciarGemeasPara(emFoco)}
                                                     onResponderGemea={responderGemeaAtual}
+                                                    onPassoAPasso={() => { setAcoesAberta(false); setPassoAPassoAberto(true) }}
                                                 />
                                             </>
                                         )}
@@ -1304,6 +1469,9 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                             {respostaFoco ? `✓ você respondeu ${respostaFoco} — veja os recursos no botão 🎓` : "Abra o botão 🎓 e toque em \"Ler questão\" para ver o enunciado e responder."}
                                         </p>
                                     </div>
+                                )}
+                                {passoAPassoAberto && emFoco && (
+                                    <PassoAPassoPlayer qid={emFoco.id} respondida={respostaFoco} onFechar={() => setPassoAPassoAberto(false)} />
                                 )}
                             </div>
                         )}
