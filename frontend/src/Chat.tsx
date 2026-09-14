@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { api, type ChatMsg, type Conversa, type DocChat, type Exame, type GemeaT, type LimitesUso, type MeuRecurso, type ModelosChat, type Questao, type VideoResultado } from "./api"
+import SeletorLista from "./SeletorLista"
 
 /** [115]: questão anotada com o caderno de origem — necessário quando a
  *  conversa reúne mais de um caderno (o número Q1 de um pode colidir com o
@@ -100,9 +101,11 @@ export function Corpo({ texto, recursoVideos }: { texto: string; recursoVideos?:
     )
 }
 
-type CampoModelo = "modelo_texto_id" | "modelo_visao_id" | "modelo_voz_id" | "modelo_transcricao_id"
+/** Exportados — o Tutor IA ([123]) reusa o mesmo seletor de IA por
+ *  categoria que o Chat de estudo já tinha. */
+export type CampoModelo = "modelo_texto_id" | "modelo_visao_id" | "modelo_voz_id" | "modelo_transcricao_id"
 
-const CATEGORIAS_IA: { campo: CampoModelo; rot: string; lista: keyof ModelosChat; ligado: boolean }[] = [
+export const CATEGORIAS_IA: { campo: CampoModelo; rot: string; lista: keyof ModelosChat; ligado: boolean }[] = [
     { campo: "modelo_texto_id", rot: "Texto", lista: "texto", ligado: true },
     { campo: "modelo_visao_id", rot: "Imagem", lista: "visao", ligado: true },
     { campo: "modelo_voz_id", rot: "Voz (fala a resposta)", lista: "voz", ligado: true },
@@ -113,29 +116,37 @@ const CATEGORIAS_IA: { campo: CampoModelo; rot: string; lista: keyof ModelosChat
  *  (via um backdrop invisível, sem listener de documento). Padrão interfaces de chat modernas. */
 /** `align="direita"` para popups ancorados perto da borda direita do
  *  compositor (senão vazam da tela abrindo para a direita). */
-function Popup({ children, className = "", align = "esquerda" }: { children: ReactNode; className?: string; align?: "esquerda" | "direita" }) {
+/** Exportado — o Tutor IA ([120]) reusa pro próprio popup de voz. */
+export function Popup({ children, className = "", align = "esquerda" }: { children: ReactNode; className?: string; align?: "esquerda" | "direita" }) {
     return <div className={`popup-menu ${align === "direita" ? "popup-direita" : ""} ${className}`} onClick={(e) => e.stopPropagation()}>{children}</div>
 }
 
-function PopupIA({
-    conversa, modelos, onTrocarModelo, onTrocarModo,
+/** Exportado — o Tutor IA ([123]) reusa pro próprio seletor de IA. A seção
+ *  "Modo de conversa" (texto/voz do [081]) é opcional — o Tutor IA já tem o
+ *  próprio conceito de voz (o botão "🚗 Voz mode" destacado), então não faz
+ *  sentido duplicar ali um segundo toggle que não muda nada visível. */
+export function PopupIA({
+    conversa, modelos, onTrocarModelo, onTrocarModo, mostrarModoConversa = true,
 }: {
     conversa: Conversa
     modelos: ModelosChat | null
     onTrocarModelo: (campo: CampoModelo, valor: number | null) => void
-    onTrocarModo: (modoVoz: boolean) => void
+    onTrocarModo?: (modoVoz: boolean) => void
+    mostrarModoConversa?: boolean
 }) {
     return (
         <Popup className="popup-ia" align="direita">
-            <div className="popup-secao">
-                <p className="popup-titulo">Modo de conversa</p>
-                <button className={`popup-linha ${!conversa.modo_voz ? "sel" : ""}`} onClick={() => onTrocarModo(false)}>
-                    <span>💬 Texto</span>{!conversa.modo_voz && <span className="check">✓</span>}
-                </button>
-                <button className={`popup-linha ${conversa.modo_voz ? "sel" : ""}`} onClick={() => onTrocarModo(true)}>
-                    <span>🎙️ Voz</span>{conversa.modo_voz && <span className="check">✓</span>}
-                </button>
-            </div>
+            {mostrarModoConversa && onTrocarModo && (
+                <div className="popup-secao">
+                    <p className="popup-titulo">Modo de conversa</p>
+                    <button className={`popup-linha ${!conversa.modo_voz ? "sel" : ""}`} onClick={() => onTrocarModo(false)}>
+                        <span>💬 Texto</span>{!conversa.modo_voz && <span className="check">✓</span>}
+                    </button>
+                    <button className={`popup-linha ${conversa.modo_voz ? "sel" : ""}`} onClick={() => onTrocarModo(true)}>
+                        <span>🎙️ Voz</span>{conversa.modo_voz && <span className="check">✓</span>}
+                    </button>
+                </div>
+            )}
             {CATEGORIAS_IA.map((cat) => {
                 const opcoes = modelos?.[cat.lista] ?? []
                 return (
@@ -398,14 +409,16 @@ async function capturarTela(): Promise<{ b64: string; erro: string | null }> {
 }
 
 const TIPOS_AUDIO_PREF = ["audio/webm", "audio/mp4"]
-function tipoAudioSuportado(): string {
+/** Exportada — o mãos-livres do Tutor IA ([120]) reusa a mesma checagem. */
+export function tipoAudioSuportado(): string {
     for (const t of TIPOS_AUDIO_PREF) if (MediaRecorder.isTypeSupported(t)) return t
     return ""
 }
 
 /** Volume (RMS) do frame atual do microfone, 0..~1. É a base da detecção de
- *  fala do mãos-livres — nível de som, não reconhecimento de voz de verdade. */
-function calcularRms(analiser: AnalyserNode, buffer: Float32Array<ArrayBuffer>): number {
+ *  fala do mãos-livres — nível de som, não reconhecimento de voz de verdade.
+ *  Exportada — reusada pelo mãos-livres do Tutor IA ([120]). */
+export function calcularRms(analiser: AnalyserNode, buffer: Float32Array<ArrayBuffer>): number {
     analiser.getFloatTimeDomainData(buffer)
     let soma = 0
     for (let i = 0; i < buffer.length; i++) soma += buffer[i] * buffer[i]
@@ -495,7 +508,8 @@ export async function checarMicrofone(pedirPermissao: boolean): Promise<EstadoMi
     }
 }
 
-function PopupVoz({
+/** Exportado — o Tutor IA ([120]) reusa pro próprio "modo carro". */
+export function PopupVoz({
     mic, onVerificar, maosLivres, onAlternarMaosLivres,
 }: {
     mic: EstadoMic
@@ -841,8 +855,15 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
             if (audioEl) {
                 audioEl.onended = devolverEscuta
                 audioEl.onerror = devolverEscuta
-                audioEl.src = `data:audio/mp3;base64,${r.audio_b64}`
-                await audioEl.play().catch(devolverEscuta)
+                audioEl.src = `data:audio/mpeg;base64,${r.audio_b64}`
+                try {
+                    await audioEl.play()
+                } catch {
+                    // autoplay bloqueado pelo navegador (comum sem gesto do usuário) — o
+                    // áudio EXISTE, só não tocou sozinho; nunca falhar calado sobre isso.
+                    setErro("A resposta chegou, mas o navegador bloqueou o áudio automático. Toque em qualquer botão do chat uma vez pra liberar o som.")
+                    devolverEscuta()
+                }
             } else {
                 devolverEscuta()
             }
@@ -1020,6 +1041,12 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     // de aba, sair do chat) — nunca deixa o microfone aberto sozinho.
     useEffect(() => () => pararTudoML(), [])
 
+    /** [123]: com o modo carro ligado, mensagem DIGITADA também fala de volta
+     *  — antes só quem falava pelo microfone ouvia a resposta; digitar com o
+     *  modo carro ligado voltava calado, obrigando o aluno a ler a tela.
+     *  Imagem anexada é exceção (a rota de fala não recebe imagem) — nesse
+     *  caso segue o caminho de texto normal, sem áudio, mesmo com o modo
+     *  carro ligado. */
     async function mandar(conteudo: string, comAnexo = true, titulo?: string) {
         if (!conteudo.trim() || ativa == null || enviando) return
         const cid = ativa
@@ -1028,18 +1055,45 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
         const b64 = comAnexo ? anexo?.b64 ?? null : null
         const meu: ChatMsg = { role: "user", conteudo: conteudo.trim(), question_id: qid === "" ? null : Number(qid) }
         setMsgs((m) => [...m, meu]); setTexto(""); if (comAnexo) setAnexo(null)
+        const falar = maosLivres && !b64
+        if (falar) pausarEscutaRef.current = true  // não escuta a própria resposta tocando (eco)
+        function devolverEscuta() {
+            pausarEscutaRef.current = false
+            if (maosLivresRef.current) setOuvindo(true)
+        }
         try {
-            const r = await api.chatEnviar(cid, meu.conteudo, meu.question_id, b64)
-            setMsgs((m) => [...m, { role: "assistant", conteudo: r.resposta, question_id: null }])
-            setLimites(r.limites)
-            // título curto quando veio de um botão de ação (senão fica o prompt inteiro)
-            if (eraNova && titulo) await api.chatEditarConversa(cid, { titulo }).catch(() => {})
-            await carregarConversas(); aoGastar?.()
+            if (falar) {
+                const r = await api.chatEnviarFalado(cid, meu.conteudo, meu.question_id)
+                setMsgs((m) => [...m, { role: "assistant", conteudo: r.resposta, question_id: null }])
+                setLimites(r.limites)
+                if (eraNova && titulo) await api.chatEditarConversa(cid, { titulo }).catch(() => {})
+                await carregarConversas(); aoGastar?.()
+                const audioEl = audioRespostaRef.current
+                if (audioEl) {
+                    audioEl.onended = devolverEscuta
+                    audioEl.onerror = devolverEscuta
+                    audioEl.src = `data:audio/mpeg;base64,${r.audio_b64}`
+                    try {
+                        await audioEl.play()
+                    } catch {
+                        setErro("A resposta chegou, mas o navegador bloqueou o áudio automático. Toque em qualquer botão do chat uma vez pra liberar o som.")
+                        devolverEscuta()
+                    }
+                } else devolverEscuta()
+            } else {
+                const r = await api.chatEnviar(cid, meu.conteudo, meu.question_id, b64)
+                setMsgs((m) => [...m, { role: "assistant", conteudo: r.resposta, question_id: null }])
+                setLimites(r.limites)
+                // título curto quando veio de um botão de ação (senão fica o prompt inteiro)
+                if (eraNova && titulo) await api.chatEditarConversa(cid, { titulo }).catch(() => {})
+                await carregarConversas(); aoGastar?.()
+            }
         } catch (e) {
             setErro(e instanceof Error ? e.message : "Falha ao falar com a IA.")
             setMsgs((m) => m.slice(0, -1))
             setTexto(meu.conteudo)  // devolve o que ele escreveu, em vez de perder
             api.chatLimites().then(setLimites).catch(() => {})
+            if (falar) devolverEscuta()
         } finally { setEnviando(false) }
     }
 
@@ -1205,35 +1259,29 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
 
                 {/* metade de baixo: as conversas */}
                 <div className="chat-box">
-                    <div className="chat-box-cab">
-                        <h4>Conversas</h4>
-                        <button className="link" onClick={() => setNovaAberta((v) => !v)}>{novaAberta ? "cancelar" : "+ nova"}</button>
-                    </div>
+                    <div className="chat-box-cab"><h4>Conversas</h4></div>
                     <div className="chat-box-corpo">
+                        <button className="btn-nova-conversa" onClick={() => setNovaAberta((v) => !v)}>
+                            {novaAberta ? <>✕ Cancelar</> : <>✎ Nova conversa</>}
+                        </button>
                         {novaAberta && (
                             <div className="chat-nova">
                                 <p className="dica" style={{ margin: "0 0 4px" }}>Cadernos (nenhum = conversa livre, sem caderno):</p>
-                                <div className="rag-uso" style={{ marginBottom: 8 }}>
-                                    {cadernos.map((c) => (
-                                        <label key={c.id}>
-                                            <input type="checkbox" checked={novosCadernos.has(c.id)} onChange={() => alternarNovoCaderno(c.id)} />
-                                            {c.orgao} · {c.cargo}
-                                        </label>
-                                    ))}
-                                    {!cadernos.length && <p className="dica">Nenhum caderno cadastrado ainda.</p>}
-                                </div>
+                                <SeletorLista
+                                    itens={cadernos.map((c) => ({ id: c.id, label: `${c.orgao} · ${c.cargo}` }))}
+                                    selecionados={novosCadernos} aoAlternar={alternarNovoCaderno}
+                                    vazio="Nenhum caderno cadastrado ainda."
+                                />
                                 {docsChat.length > 0 && (
                                     <>
                                         <p className="dica" style={{ margin: "0 0 4px" }}>Fontes da biblioteca (opcional, vazio = usa todas classificadas "Chat de estudos"):</p>
-                                        <div className="rag-uso" style={{ marginBottom: 8 }}>
-                                            {docsChat.map((d) => (
-                                                <label key={d.id} title={d.descricao}>
-                                                    <input type="checkbox" disabled={!d.indexado} checked={novasFontesRag.has(d.id)} onChange={() => alternarNovaFonteRag(d.id)} />
-                                                    {d.titulo}
-                                                    {!d.indexado && <span className="dica"> · 🕓 em análise</span>}
-                                                </label>
-                                            ))}
-                                        </div>
+                                        <SeletorLista
+                                            itens={docsChat.map((d) => ({
+                                                id: d.id, label: d.titulo, titulo: d.descricao, desabilitado: !d.indexado,
+                                                sublabel: !d.indexado ? "🕓 em análise" : undefined,
+                                            }))}
+                                            selecionados={novasFontesRag} aoAlternar={alternarNovaFonteRag}
+                                        />
                                     </>
                                 )}
                                 <label>Escolha da questão
@@ -1390,6 +1438,13 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                     </span>
 
                                     <span className="chat-espaco" />
+
+                                    {/* [123]: modo carro destacado, ao lado da escolha de IA — antes só
+                                        vivia dentro do popup do microfone (⌄), pouco visível. */}
+                                    <button className={`pill voz-mode ${maosLivres ? "ativo" : ""}`} onClick={alternarMaosLivres}
+                                        title="Modo carro: liga uma vez, fica ouvindo, fala, envia e responde sozinho">
+                                        🚗 Voz mode
+                                    </button>
 
                                     {conversa && (
                                         <span className="popup-anchor">

@@ -848,3 +848,43 @@ button.ia:hover { background: #5b21b6; }
    seletor A-E continua disponível pelo popup 🎓 normalmente. */
 .modo-computador .lado-toggle, .modo-computador .resposta-flutuante { display: none; }
 .modo-computador .chat-msgs.reserva-lado { padding-left: 20px; padding-right: 20px; }
+
+/* Lista de validação em list view (SeletorLista.tsx) — cadernos/fontes de
+   conhecimento no Chat de estudo e no Tutor IA. Rolagem própria pra quando
+   houver muitos documentos na Biblioteca; cada item numa linha, checkbox
+   alinhado com a 1ª linha do texto mesmo se ele quebrar em várias. Seletor
+   de 2 classes (.lista-selecao .lista-selecao-item) de propósito — vence
+   qualquer regra de "label" com 1 classe (ex.: .chat-box-corpo label),
+   sem depender de ordem de declaração no arquivo pra ganhar a cascata. */
+.lista-selecao {
+    display: flex; flex-direction: column; gap: 2px;
+    max-height: 220px; overflow-y: auto;
+    border: 1px solid var(--borda); border-radius: 8px;
+    padding: 4px; margin-bottom: 8px;
+}
+.lista-selecao .lista-selecao-item {
+    display: flex; flex-direction: row; align-items: flex-start; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    color: var(--texto); font-size: .85rem; text-align: left; cursor: pointer;
+}
+.lista-selecao .lista-selecao-item:hover { background: var(--fundo); }
+.lista-selecao .lista-selecao-item input[type="checkbox"] {
+    width: auto; flex: 0 0 auto; margin-top: 2px;
+    padding: 0; border: none; background: transparent; accent-color: var(--texto);
+}
+.lista-selecao .lista-selecao-texto { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.lista-selecao .lista-selecao-sub { font-size: .72rem; }
+
+/* "Nova conversa" como botão de verdade (assistentes de IA etc.), não um
+   linkzinho no canto do cabeçalho — pedido explícito do usuário pra não
+   fugir do design system que ele já conhece de outros chats. Reusa o
+   próprio botão primário do app (mesmo peso visual de "Enviar"/"Criar
+   conversa"), só em largura total e com respiro antes da lista. */
+.btn-nova-conversa { width: 100%; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* [123]: modo carro ("Voz mode") destacado ao lado da escolha de IA, pedido
+   explícito — antes só existia dentro do popup do microfone, pouco visível.
+   Base é o próprio `.pill` (mesmo peso visual do seletor de modelo); "ativo"
+   preenche sólido (mesma cor do botão primário) pra ficar óbvio que está
+   ligado, sem precisar abrir nada pra saber. */
+.pill.voz-mode.ativo { background: var(--texto); color: var(--cartao); border-color: var(--texto); }

@@ -192,6 +192,7 @@ export type UsoConexao = {
 export type UsoResumo = {
     cotacao_usd_brl: number; fonte_cotacao: string; por_conexao: UsoConexao[]
 }
+export type PromptItem = { chave: string; nome: string; onde_usado: string; como_funciona: string; texto: string }
 export type PatchQuestao = Partial<{
     enunciado: string; gabarito: string; disciplina: string
     alternativas: Record<string, string>; revisada: boolean; descartada: boolean; modo_exibicao: string; enunciado_col2: string; pergunta: string
@@ -273,6 +274,11 @@ export const api = {
     chatQuestaoAleatoria: (cid: number) =>
         pedir<{ question_id: number; conteudo: string }>(`/chat/conversas/${cid}/questao-aleatoria`, { method: "POST" }),
     chatEnviar: (cid: number, texto: string, question_id: number | null, imagem_b64?: string | null) => pedir<{ resposta: string; saldo: number; limites: LimitesUso }>(`/chat/conversas/${cid}/mensagem`, { method: "POST", body: JSON.stringify({ texto, question_id, imagem_b64: imagem_b64 ?? null }) }),
+    // [123]: mesma resposta de chatEnviar, mas TAMBÉM fala (TTS) — pro modo
+    // carro falar de volta mesmo quando o aluno digita em vez de usar o mic.
+    chatEnviarFalado: (cid: number, texto: string, question_id: number | null) =>
+        pedir<{ resposta: string; audio_b64: string; saldo: number; limites: LimitesUso }>(
+            `/chat/conversas/${cid}/mensagem-falada`, { method: "POST", body: JSON.stringify({ texto, question_id }) }),
     chatEnviarAudio: async (cid: number, blob: Blob, question_id: number | null) => {
         const fd = new FormData()
         fd.append("file", blob, "pergunta.webm")
@@ -365,6 +371,9 @@ export const api = {
     ragApagar: (id: number) => pedir<void>(`/rag/documentos/${id}`, { method: "DELETE" }),
     ragBuscar: (consulta: string) => pedir<{ resultados: { titulo: string; chunk: number; conteudo: string }[] }>("/rag/buscar", { method: "POST", body: JSON.stringify({ consulta }) }),
     ragPerguntar: (pergunta: string) => pedir<{ resposta: string; trechos: { titulo: string; chunk: number; conteudo: string }[] }>("/rag/perguntar", { method: "POST", body: JSON.stringify({ pergunta }) }),
+    prompts: () => pedir<PromptItem[]>("/prompts"),
+    editarPrompt: (chave: string, texto: string) =>
+        pedir<PromptItem>(`/prompts/${encodeURIComponent(chave)}`, { method: "PUT", body: JSON.stringify({ texto }) }),
     catalogoPlataformas: () => pedir<{ nome: string; endpoint: string }[]>("/ai/catalogo/plataformas"),
     catalogoModelos: (plataforma: string, categoria: string) =>
         pedir<{ id: number; model_id: string; rotulo: string; dim: number | null; padrao: boolean }[]>(`/ai/catalogo/modelos?plataforma=${encodeURIComponent(plataforma)}&categoria=${categoria}`),

@@ -11,6 +11,7 @@ import TutorIA from "./TutorIA"
 import Perfil from "./Perfil"
 import Pagamentos from "./Pagamentos"
 import Youtube from "./Youtube"
+import Prompts from "./Prompts"
 import Acesso from "./Acesso"
 import { api, type CreditosResumo, type Usuario } from "./api"
 
@@ -27,7 +28,7 @@ export default function App() {
     return <Painel usuario={usuario} aoSair={() => setUsuario(null)} aoAtualizarUsuario={setUsuario} />
 }
 
-type Aba = "caderno" | "chat" | "tutor_ia" | "revisao" | "desempenho" | "perfil" | "cadastro" | "ia" | "estat" | "rag" | "pagamentos" | "youtube"
+type Aba = "caderno" | "chat" | "tutor_ia" | "revisao" | "desempenho" | "perfil" | "cadastro" | "ia" | "estat" | "rag" | "pagamentos" | "youtube" | "prompts"
 
 const MENU: { aba: Aba; label: string; admin: boolean }[] = [
     { aba: "caderno", label: "Caderno de questões", admin: false },
@@ -41,6 +42,7 @@ const MENU: { aba: Aba; label: string; admin: boolean }[] = [
     { aba: "rag", label: "Biblioteca", admin: true },
     { aba: "pagamentos", label: "Pagamentos", admin: true },
     { aba: "youtube", label: "🎬 YouTube", admin: true },
+    { aba: "prompts", label: "📝 Prompts", admin: true },
 ]
 
 function Painel({ usuario, aoSair, aoAtualizarUsuario }: { usuario: Usuario; aoSair: () => void; aoAtualizarUsuario: (u: Usuario) => void }) {
@@ -121,6 +123,7 @@ function Painel({ usuario, aoSair, aoAtualizarUsuario }: { usuario: Usuario; aoS
             {aba === "rag" && admin && <Biblioteca />}
             {aba === "pagamentos" && admin && <Pagamentos />}
             {aba === "youtube" && admin && <Youtube />}
+            {aba === "prompts" && admin && <Prompts />}
         </main>
     )
 }
