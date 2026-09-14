@@ -8,74 +8,38 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ChatMessage, Conversation, Exam, Question
+from app.db.models import ChatMessage, Conversation, Exam, Question, RagDocument
 from app.modules.ai_registry import servico
+from app.modules.prompts import prompts
 from app.modules.rag.rag import contexto_biblioteca
 
 FIGURAS_DIR = Path(__file__).resolve().parents[3].parent / "uploads" / "figuras"
 
-SISTEMA = (
-    "Você é um TUTOR especialista deste caderno de concurso. Ensine com base no "
-    "conteúdo do caderno (questões, alternativas, gabaritos e figuras). Trabalhe UMA "
-    "questão de cada vez, sem atropelar.\n\n"
-    "REGRA DE OURO: o gabarito de uma questão só aparece pra você DEPOIS que o aluno "
-    "responde. Questão marcada como 'Gabarito: (NÃO revelado — aluno ainda não "
-    "respondeu)' significa exatamente isso — você não sabe qual é a certa. NUNCA "
-    "adivinhe, nunca afirme qual alternativa está certa nesse caso, mesmo que ache que "
-    "sabe pelo seu conhecimento geral. Se o aluno pedir para explicar, dar mini-aula, "
-    "macete ou gêmeas de uma questão ainda não revelada, peça a ele para responder "
-    "primeiro (escolher a letra). Quando o aluno informar a resposta dele (mensagem no "
-    "formato 'Minha resposta da Q{n}: {letra}'), a partir DAÍ o gabarito passa a "
-    "aparecer pra você — diga se ele acertou ou errou e ofereça continuar.\n\n"
-    "Seu repertório, conforme o que o aluno pedir (só depois de revelado o gabarito):\n"
-    "- EXPLICAR: por que a alternativa correta é correta e por que cada uma das outras "
-    "está errada.\n"
-    "- MINI-AULA: o conceito por trás da questão, do começo, curto e com exemplo.\n"
-    "- MACETE: um gancho de memória, a regra rápida, os passos, quando usar e quando "
-    "NÃO usar.\n"
-    "- QUESTÕES GÊMEAS: questões novas que cobram a mesma habilidade em outro contexto.\n"
-    "- VÍDEOS: você NÃO navega na internet e NÃO conhece links. Nunca invente URL nem "
-    "título de vídeo. Em vez disso, dê de 3 a 5 termos de busca, cada um em uma linha "
-    "própria começando exatamente com 'BUSCAR: '. O aluno quer entender A QUESTÃO E A "
-    "BANCA, não uma aula genérica do tema — cada termo deve combinar: a banca do caderno "
-    "(se aparecer no 'Conteúdo do caderno' abaixo), a disciplina/conceito exato da "
-    "questão, e uma palavra que aponte pra resolução de prova ('questão comentada', "
-    "'resolução comentada', 'prova comentada', 'gabarito comentado') — nunca só o tema "
-    "solto tipo 'aula de física'. O aplicativo transforma cada linha dessas em uma busca "
-    "real. Antes deles, diga em uma frase o que o aluno deve procurar aprender.\n\n"
-    "Quando houver IMAGEM, use-a para explicar o que está desenhado. Nunca invente "
-    "gabarito — o backend é a autoridade; se não souber, diga que não sabe. Escreva em "
-    "português do Brasil, claro e direto, sem enrolação."
-)
+# [125]: o texto dos prompts abaixo (chat_sistema/chat_sistema_tutor/
+# chat_persona_professor/chat_persona_amigo) mora na tabela `prompts`, não
+# mais aqui — `prompts.buscar(db, chave)` é a única forma de obtê-los.
 
-# [109]: Tutor IA — especialista geral (não amarrado a um caderno de questões
-# oficial), grounded na biblioteca que o aluno mesmo escolheu (uso="tutor").
-SISTEMA_TUTOR = (
-    "Você é um TUTOR especialista no assunto que o aluno escolheu estudar. Não está "
-    "ligado a um caderno de questões oficial — está ligado ao conteúdo da biblioteca "
-    "(trechos de referência, quando houver). Explique cada detalhe com profundidade: o "
-    "conceito, a lógica por trás, exemplos práticos, e o que costuma confundir quem "
-    "estuda o assunto. Use os trechos de referência quando ajudarem a responder; se não "
-    "houver trecho relevante, responda com seu conhecimento geral e diga com clareza que "
-    "não há material específico da biblioteca sobre aquele ponto — nunca finja que tem.\n\n"
-    "VÍDEOS: você NÃO navega na internet e NÃO conhece links. Nunca invente URL nem "
-    "título de vídeo. Em vez disso, dê de 3 a 5 termos de busca, cada um em uma linha "
-    "própria começando exatamente com 'BUSCAR: ' — o aplicativo transforma cada linha "
-    "dessas em uma busca real de vídeos relevantes. Antes deles, diga em uma frase o que "
-    "o aluno deve procurar aprender.\n\n"
-    "Quando houver IMAGEM, use-a para explicar o que está desenhado. Escreva em "
-    "português do Brasil, claro e direto, sem enrolação."
-)
-PERSONA_TUTOR = {
-    "professor": (
-        "Trate o aluno com a didática de um professor — estruturado, preciso, "
-        "técnico quando o assunto exigir, mas sempre claro."
-    ),
-    "amigo": (
-        "Trate o aluno como um amigo que entende bem do assunto — tom leve e "
-        "direto, sem formalidade excessiva, sem perder a precisão do conteúdo."
-    ),
-}
+
+def _material_selecionado(db: Session, conversa: Conversation) -> str:
+    """[123]: injeta o QUE está carregado nesta conversa do Tutor de forma
+    INCONDICIONAL — não depende de busca semântica pela mensagem do aluno
+    (que falha pra saudação/pedido genérico). Usa a `descricao` já gerada na
+    ingestão ([108]) como resumo do material. Best-effort: nunca lança."""
+    if conversa.modo != "tutor" or not conversa.rag_doc_ids:
+        return ""
+    try:
+        docs = db.execute(
+            select(RagDocument).where(RagDocument.id.in_(conversa.rag_doc_ids))
+        ).scalars().all()
+    except Exception:  # noqa: BLE001 — apoio opcional, nunca derruba a resposta
+        return ""
+    if not docs:
+        return ""
+    linhas = [
+        f"- \"{d.titulo}\": {d.descricao}" if d.descricao else f"- \"{d.titulo}\" (ainda sem resumo)"
+        for d in docs
+    ]
+    return "MATERIAL DESTA CONVERSA (selecionado pelo aluno):\n" + "\n".join(linhas)
 
 # Marcador que o front manda quando o aluno escolhe a resposta no seletor A-E da
 # questão em foco. Vira a fonte de verdade de "já respondeu" — derivado do próprio
@@ -187,10 +151,18 @@ def responder(db: Session, conversa: Conversation, texto_usuario: str,
     # (antes ignorava `rag_doc_ids` nesse modo — usava sempre TODOS os
     # documentos uso_chat=true, sem filtro nenhum).
     if conversa.modo == "tutor":
-        sistema = SISTEMA_TUTOR + "\n\n" + PERSONA_TUTOR.get(conversa.persona, PERSONA_TUTOR["professor"])
-        biblioteca = contexto_biblioteca(db, texto_usuario, uso="tutor", doc_ids=conversa.rag_doc_ids or None)
+        persona_chave = "chat_persona_amigo" if conversa.persona == "amigo" else "chat_persona_professor"
+        sistema = prompts.buscar(db, "chat_sistema_tutor") + "\n\n" + prompts.buscar(db, persona_chave)
+        material = _material_selecionado(db, conversa)
+        if material:
+            sistema += "\n\n" + material
+        # k maior que o padrão (4): o pedido foi "saber tudo sobre o arquivo" —
+        # com poucos documentos selecionados, uma busca mais generosa cobre
+        # bem mais do conteúdo real por pergunta.
+        biblioteca = contexto_biblioteca(db, texto_usuario, uso="tutor", k=8, doc_ids=conversa.rag_doc_ids or None)
     else:
-        sistema = SISTEMA + "\n\nConteúdo do caderno:\n" + _contexto_caderno(db, exam_ids, respondidas)
+        sistema = (prompts.buscar(db, "chat_sistema") + "\n\nConteúdo do caderno:\n"
+                   + _contexto_caderno(db, exam_ids, respondidas))
         biblioteca = contexto_biblioteca(db, texto_usuario, uso="chat", doc_ids=conversa.rag_doc_ids or None)
     # [108]: motor de biblioteca — best-effort, "" quando não há nada relevante.
     if biblioteca:

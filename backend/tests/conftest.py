@@ -27,11 +27,13 @@ if not _p.path.endswith("_test_db"):
     _url = urlunparse(_p._replace(path="/concursos_test_db"))
 os.environ["DATABASE_URL"] = _url
 
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import insert, text  # noqa: E402
 
 from app.db import models  # noqa: E402,F401  - popula o metadata; sem isso create_all não cria nada
 from app.db.base import Base  # noqa: E402
+from app.db.models import Prompt  # noqa: E402
 from app.db.session import engine  # noqa: E402
+from app.modules.prompts.seed import PROMPTS  # noqa: E402
 
 assert engine.url.database.endswith("_test_db"), (
     f"SALVAGUARDA: os testes tentaram usar o banco '{engine.url.database}'. "
@@ -50,3 +52,11 @@ with engine.begin() as _conn:
 # excluido_em de exams). drop_all + create_all mantém o teste sempre igual ao modelo.
 Base.metadata.drop_all(engine)
 Base.metadata.create_all(engine)
+
+# [125]: `create_all` só cria o schema da tabela `prompts`, não semeia as 12
+# linhas (isso é trabalho da migration 0041, que os testes não rodam) — sem
+# isso, qualquer teste que exercite código real (não mockado) que chame
+# `prompts.buscar()` quebraria com PromptNaoEncontrado. Mesma lista de seed
+# usada pela migration, importada de um único lugar.
+with engine.begin() as _conn:
+    _conn.execute(insert(Prompt), PROMPTS)

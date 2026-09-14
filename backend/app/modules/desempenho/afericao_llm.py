@@ -9,6 +9,7 @@ from app.db.models import Exam, ExamRules
 from app.modules.ai_registry import servico
 from app.modules.desempenho.classificacao import classificar
 from app.modules.ingestion.transcricao_ia import _parse_json_tolerante
+from app.modules.prompts import prompts
 
 
 def _itens(disc_counts: dict[str, int], acertos: dict[str, int]) -> list[tuple[str, bool]]:
@@ -35,22 +36,17 @@ def _cenarios(disc_counts: dict[str, int], fases: dict[str, str]) -> list[dict[s
     return [todos, metade, *reprova]
 
 
-def _prompt(regras: ExamRules, disc_counts: dict[str, int], acertos: dict[str, int]) -> list[dict]:
+def _prompt(db: Session, regras: ExamRules, disc_counts: dict[str, int], acertos: dict[str, int]) -> list[dict]:
     linhas = "\n".join(f"- {d}: {acertos.get(d,0)} de {t} acertos" for d, t in disc_counts.items())
     fases = "\n".join(f"- {d} pertence à fase '{f}'" for d, f in (regras.fases or {}).items())
     minf = "\n".join(f"- fase '{f}': mínimo {p}% dos pontos" for f, p in (regras.minimo_pct_fase or {}).items())
     sz = ", ".join(regras.materias_sem_zero or []) or "nenhuma"
-    sistema = (
-        "Você aplica regras de eliminação de um concurso. Cada questão vale 1 ponto. "
-        "Elimine o candidato se ficar abaixo do mínimo em QUALQUER fase, ou se zerar uma "
-        "matéria proibida. Devolva SOMENTE JSON: "
-        '{"eliminado": true/false, "por_fase": {"<fase>": <percentual de acerto 0-100>}}'
-    )
     user = (
         f"Regras:\nFases:\n{fases}\nMínimos por fase:\n{minf}\nMatérias que não podem zerar: {sz}\n\n"
         f"Resultado do candidato:\n{linhas}\n\nCalcule."
     )
-    return [{"role": "system", "content": sistema}, {"role": "user", "content": user}]
+    return [{"role": "system", "content": prompts.buscar(db, "afericao_llm_sistema")},
+            {"role": "user", "content": user}]
 
 
 def aferir(db: Session, exam: Exam, regras: ExamRules) -> dict:
@@ -65,7 +61,7 @@ def aferir(db: Session, exam: Exam, regras: ExamRules) -> dict:
     for acertos in cenarios:
         meu = classificar(regras, _itens(disc_counts, acertos))
         try:
-            resposta = servico.conversar(db, "texto", _prompt(regras, disc_counts, acertos),
+            resposta = servico.conversar(db, "texto", _prompt(db, regras, disc_counts, acertos),
                                          origem="aferir_llm", max_tokens=600)
             llm = _parse_json_tolerante(resposta)
         except Exception:  # noqa: BLE001 - LLM falhou nesse cenário: conta como divergência

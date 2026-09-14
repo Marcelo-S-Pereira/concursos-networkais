@@ -9,15 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import RagChunk, RagDocument
 
-SISTEMA = (
-    "Você extrai os SUBTEMAS do conteúdo programático de um edital de concurso, "
-    "agrupados por disciplina. Devolva SOMENTE um JSON no formato "
-    '{"Língua Portuguesa": ["...", "..."], "Matemática": ["..."], '
-    '"Conhecimentos Específicos": ["..."]}. Cada subtema é uma string curta (ex.: '
-    '"Concordância nominal e verbal", "Crase", "Análise combinatória"). Para '
-    "Conhecimentos Específicos, use os subtemas do CARGO indicado. Não invente: use "
-    "apenas o que está no texto do edital."
-)
+# [125]: texto em `prompts` (chave "temas_edital_sistema"), não mais aqui.
 
 
 def _texto_conteudo_programatico(db: Session) -> str:
@@ -45,6 +37,7 @@ def _texto_conteudo_programatico(db: Session) -> str:
 def extrair_subtemas(db: Session, cargo: str) -> dict[str, list[str]]:
     from app.modules.ai_registry import servico
     from app.modules.ingestion.transcricao_ia import _parse_json_tolerante
+    from app.modules.prompts import prompts
 
     texto = _texto_conteudo_programatico(db)
     if not texto.strip():
@@ -52,7 +45,7 @@ def extrair_subtemas(db: Session, cargo: str) -> dict[str, list[str]]:
 
     resposta = servico.conversar(
         db, "texto",
-        [{"role": "system", "content": SISTEMA},
+        [{"role": "system", "content": prompts.buscar(db, "temas_edital_sistema")},
          {"role": "user", "content": f"Cargo: {cargo}\n\nConteúdo programático do edital:\n{texto}"}],
         origem="extrair_subtemas", max_tokens=1500,
     )

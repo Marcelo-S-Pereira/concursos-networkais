@@ -47,8 +47,10 @@ def test_gerar_passo_a_passo_parseia_lista_e_limita_a_10():
         gabarito = "A"
         alternativas = []
 
+    db = SessionLocal()
     with unittest.mock.patch.object(tutor.servico, "conversar", return_value=resposta_llm):
-        passos = tutor.gerar_passo_a_passo(db=None, questao=_QFake(), user_id=1)
+        passos = tutor.gerar_passo_a_passo(db=db, questao=_QFake(), user_id=1)
+    db.close()
     assert len(passos) == 10  # teto de segurança
     assert passos[0] == "passo 0"
 
@@ -61,8 +63,10 @@ def test_gerar_passo_a_passo_resposta_vazia_da_fallback_honesto():
         gabarito = "A"
         alternativas = []
 
+    db = SessionLocal()
     with unittest.mock.patch.object(tutor.servico, "conversar", return_value='{"passos": []}'):
-        passos = tutor.gerar_passo_a_passo(db=None, questao=_QFake(), user_id=1)
+        passos = tutor.gerar_passo_a_passo(db=db, questao=_QFake(), user_id=1)
+    db.close()
     assert len(passos) == 1
     assert "não consegui" in passos[0].lower()
 

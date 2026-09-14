@@ -68,14 +68,12 @@ def _gerar_descricao(db: Session, titulo: str, texto: str) -> str:
     esforço: sem conexão de IA ou qualquer falha, devolve "" (o admin escreve
     à mão depois). Nunca bloqueia a ingestão."""
     from app.modules.ai_registry import servico
+    from app.modules.prompts import prompts as prompts_mod
 
     try:
         amostra = texto[:6000]
         mensagens = [
-            {"role": "system", "content": (
-                "Resuma em até 2 frases curtas (máx 300 caracteres) do que trata este documento — "
-                "assunto, disciplina, tipo de conteúdo. Sem introdução, sem markdown, só o resumo."
-            )},
+            {"role": "system", "content": prompts_mod.buscar(db, "rag_descricao_sistema")},
             {"role": "user", "content": f"Título: {titulo}\n\nTrecho do documento:\n{amostra}"},
         ]
         resposta = servico.conversar(db, "texto", mensagens, origem="rag_descricao", max_tokens=150)
@@ -157,13 +155,7 @@ def buscar(
             for cont, t, idx, dist in linhas]
 
 
-PERGUNTA_SISTEMA = (
-    "Você responde dúvidas sobre um EDITAL de concurso APENAS com base nos trechos "
-    "fornecidos abaixo. Se a resposta não estiver nos trechos, diga claramente que o "
-    "edital, nos trechos encontrados, não trata disso — NUNCA invente regra, prazo, "
-    "número de vagas, data ou critério. Cite o número do trecho que embasa cada afirmação. "
-    "Seja objetivo e direto."
-)
+# [125]: texto em `prompts` (chave "rag_pergunta_sistema"), não mais aqui.
 
 
 def perguntar(db: Session, pergunta: str, colecao: str | None = "oficial", k: int = 6, uso: str | None = None) -> dict:
@@ -172,6 +164,7 @@ def perguntar(db: Session, pergunta: str, colecao: str | None = "oficial", k: in
     O LLM só sintetiza os trechos recuperados; nunca inventa. Se não houver trecho,
     devolve aviso — nunca uma resposta 'de cabeça'. `uso` ([106]): ver `buscar()`."""
     from app.modules.ai_registry import servico
+    from app.modules.prompts import prompts as prompts_mod
 
     trechos = buscar(db, pergunta, colecao=colecao, k=k, uso=uso)
     if not trechos:
@@ -179,7 +172,7 @@ def perguntar(db: Session, pergunta: str, colecao: str | None = "oficial", k: in
 
     contexto = "\n\n".join(f"[trecho {t['chunk']}] {t['conteudo']}" for t in trechos)
     mensagens = [
-        {"role": "system", "content": PERGUNTA_SISTEMA},
+        {"role": "system", "content": prompts_mod.buscar(db, "rag_pergunta_sistema")},
         {"role": "user", "content": f"Pergunta: {pergunta}\n\nTrechos do edital:\n{contexto}"},
     ]
     resposta = servico.conversar(db, "texto", mensagens, origem="rag_pergunta", max_tokens=800)

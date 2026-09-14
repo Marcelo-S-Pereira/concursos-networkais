@@ -6,16 +6,9 @@ from sqlalchemy.orm import Session
 from app.db.models import Question, TwinQuestion
 from app.modules.ai_registry import resolver, servico
 from app.modules.ingestion.transcricao_ia import _parse_json_tolerante
+from app.modules.prompts import prompts
 
-SISTEMA = (
-    "Você gera DUAS questões gêmeas de concurso a partir de uma questão base: mesma "
-    "habilidade/conceito, contexto DIFERENTE, sem copiar a base, com resposta única e "
-    "correta. Faça a primeira equivalente e a segunda com uma pequena variação. Devolva "
-    "SOMENTE JSON válido: "
-    '{"gemeas": [{"enunciado": "...", "alternativas": {"A": "...", "B": "...", "C": "...", '
-    '"D": "...", "E": "..."}, "gabarito": "A"}, {"enunciado": "...", "alternativas": {...}, '
-    '"gabarito": "B"}]}'
-)
+# [125]: texto em `prompts` (chave "gemeas_sistema"), não mais aqui.
 
 
 def gerar_gemeas(db: Session, questao: Question, user_id: int) -> list[dict]:
@@ -24,7 +17,8 @@ def gerar_gemeas(db: Session, questao: Question, user_id: int) -> list[dict]:
         f"Disciplina: {questao.disciplina}\nQuestão base:\n{questao.enunciado}\n{alternativas}\n"
         f"Gabarito da base: {questao.gabarito}\nGere as duas gêmeas."
     )
-    mensagens = [{"role": "system", "content": SISTEMA}, {"role": "user", "content": prompt}]
+    mensagens = [{"role": "system", "content": prompts.buscar(db, "gemeas_sistema")},
+                 {"role": "user", "content": prompt}]
     resposta = servico.conversar(db, "texto", mensagens, origem="gemeas", max_tokens=2500)
     dados = _parse_json_tolerante(resposta)
 

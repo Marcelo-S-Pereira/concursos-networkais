@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.models import LlmTeachingOutput, Question
 from app.modules.ai_registry import resolver, servico
 from app.modules.ingestion.transcricao_ia import _parse_json_tolerante
+from app.modules.prompts import prompts
 from app.modules.rag.rag import contexto_biblioteca
 
 TIPOS_ERRO = {
@@ -15,47 +16,7 @@ TIPOS_ERRO = {
     "CONFUSION_BETWEEN_CONCEPTS", "LIKELY_GUESS", "TIME_PRESSURE", "NONE",
 }
 
-SISTEMA = (
-    "Você é um tutor especialista em preparação para concursos públicos, no nível de um "
-    "professor experiente. Seu papel é EXPLICAR — o gabarito e o acerto/erro já foram "
-    "decididos pelo backend; você nunca decide certo/errado.\n\n"
-    "PARA A MINI-AULA (mini_lesson), texto corrido e claro, 5 a 15 linhas, cubra nesta ordem:\n"
-    "1. o conceito central da questão, em 1-2 frases;\n"
-    "2. se o aluno ERROU: o erro ESPECÍFICO dele, não genérico. Ele marcou uma alternativa "
-    "— explique por que ELA parece certa à primeira vista e por que está errada. Se ele "
-    "confundiu dois conceitos, nomeie os dois e a diferença entre eles;\n"
-    "3. a fórmula ou regra correta, se aplicável;\n"
-    "4. o que revisar depois — tópico específico, nunca \"estude mais\".\n"
-    "Se o aluno ACERTOU, não invente um erro: reforce o raciocínio certo em 2-4 linhas e "
-    "aponte a armadilha que a questão usava contra quem confunde o conceito — só isso, sem "
-    "o resto da estrutura de erro.\n\n"
-    "PARA O MACETE (memory_trick), escolha o mecanismo que melhor se encaixa NESTA questão, "
-    "entre: reconhecimento de palavra-chave (uma palavra do enunciado que já entrega o "
-    "caminho); contraste entre dois conceitos que se confundem; fórmula mental (forma "
-    "resumida e fácil de lembrar); atenção a unidade/dimensão; proporcionalidade "
-    "(cresce/diminui junto); eliminação de alternativas (padrão que descarta opções rápido); "
-    "mnemônico (frase ou sigla). Não force um macete genérico — se nenhum tipo couber bem, "
-    "escolha o mais próximo e adapte. O macete é uma camada RÁPIDA sobre o conceito correto, "
-    "nunca um substituto dele nem uma regra falsa.\n\n"
-    "PARA error_type, use estas definições: CONCEPT (não sabia o conceito); CALCULATION "
-    "(sabia o caminho, errou a conta); INTERPRETATION (leu errado o enunciado/comando); "
-    "MEMORY (sabia mas esqueceu um dado/fórmula na hora); UNIT_CONVERSION (errou conversão "
-    "de unidade); CONFUSION_BETWEEN_CONCEPTS (trocou um conceito por outro parecido); "
-    "LIKELY_GUESS (padrão de resposta sugere chute); TIME_PRESSURE (sinal de pressa/resposta "
-    "parcial); NONE (acertou, ou não há erro identificável). Classificação pedagógica, não "
-    "altera o gabarito.\n\n"
-    "NUNCA invente: percentual de candidatos, número de inscritos, dificuldade empírica da "
-    "questão, ano, banca, nota de corte, histórico de classificação, peso oficial da questão "
-    "ou regra de eliminação — nada disso foi passado a você, então não existe para esta "
-    "explicação.\n\n"
-    "Devolva SOMENTE um JSON válido, sem texto fora dele, no formato: "
-    '{"diagnosis": "...", "mini_lesson": "...", '
-    '"memory_trick": {"memory_hook": "...", "rapid_rule": "...", "steps": ["..."], '
-    '"applies_when": "...", "warning": "..."}, '
-    '"error_type": "CONCEPT|CALCULATION|INTERPRETATION|MEMORY|UNIT_CONVERSION|'
-    'CONFUSION_BETWEEN_CONCEPTS|LIKELY_GUESS|TIME_PRESSURE|NONE", '
-    '"review_recommendation": "..."}'
-)
+# [125]: texto em `prompts` (chave "tutor_explicar_sistema"), não mais aqui.
 
 
 def explicar_questao(db: Session, questao: Question, user_id: int, student_answer: str | None) -> dict:
@@ -82,7 +43,7 @@ def explicar_questao(db: Session, questao: Question, user_id: int, student_answe
     )
     # [114]: material que o admin classificou pra "Simulado" na Biblioteca —
     # só entra se ele mesmo marcou como pertinente; best-effort, nunca lança.
-    sistema = SISTEMA
+    sistema = prompts.buscar(db, "tutor_explicar_sistema")
     biblioteca = contexto_biblioteca(db, f"{questao.disciplina} {questao.enunciado}", uso="simulado")
     if biblioteca:
         sistema += "\n\n" + biblioteca
@@ -128,22 +89,9 @@ def explicar_questao(db: Session, questao: Question, user_id: int, student_answe
     return saida
 
 
-# [117]: Tutor por voz guiado — narra a resolução em PASSOS curtos, um de
-# cada vez, pra tocar em áudio e o aluno acompanhar (botão ou voz avançam).
-SISTEMA_PASSOS = (
-    "Você é um tutor que explica a RESOLUÇÃO de uma questão de concurso passo a passo, "
-    "narrando como se estivesse falando em voz alta pro aluno acompanhar um passo de cada "
-    "vez — o aplicativo toca cada passo em áudio, um por vez. Quebre o raciocínio completo "
-    "— do que a questão pede até chegar na alternativa correta — em PASSOS CURTOS e "
-    "sequenciais (4 a 8 passos), cada um com 1 a 3 frases, em português falado, natural, "
-    "sem símbolo de markdown, sem lista dentro do passo (o texto vai direto pra um "
-    "sintetizador de voz). Se for cálculo, narre cada operação e o resultado parcial "
-    "('primeiro calculamos... o que dá...'). Se for geometria, descreva a figura e cada "
-    "dedução. Se a questão não for de cálculo/geometria, narre o raciocínio lógico em "
-    "etapas do mesmo jeito. O gabarito já foi decidido pelo backend — nunca contradiga a "
-    "resposta correta informada.\n\n"
-    'Devolva SOMENTE um JSON válido: {"passos": ["...", "..."]}'
-)
+# [117]/[125]: Tutor por voz guiado — narra a resolução em PASSOS curtos, um
+# de cada vez, pra tocar em áudio e o aluno acompanhar (botão ou voz avançam).
+# Texto em `prompts` (chave "tutor_passo_a_passo_sistema"), não mais aqui.
 
 
 def gerar_passo_a_passo(db: Session, questao: Question, user_id: int) -> list[str]:
@@ -157,7 +105,8 @@ def gerar_passo_a_passo(db: Session, questao: Question, user_id: int) -> list[st
         + (f' — "{texto_correta}"' if texto_correta else "") + "\n"
         "Narre a resolução completa em passos curtos, conforme as instruções do sistema."
     )
-    mensagens = [{"role": "system", "content": SISTEMA_PASSOS}, {"role": "user", "content": prompt}]
+    mensagens = [{"role": "system", "content": prompts.buscar(db, "tutor_passo_a_passo_sistema")},
+                 {"role": "user", "content": prompt}]
     resposta = servico.conversar(db, "texto", mensagens, origem="tutor_passo_a_passo", max_tokens=1500,
                                  user_id=user_id)
     dados = _parse_json_tolerante(resposta)

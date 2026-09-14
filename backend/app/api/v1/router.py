@@ -12,6 +12,7 @@ from app.api.v1 import (
     estatisticas,
     health,
     pagamentos,
+    prompts,
     questoes,
     rag,
     revisao,
@@ -37,3 +38,4 @@ api_router.include_router(pagamentos.router, tags=["pagamentos"])
 api_router.include_router(creditos.router, tags=["creditos"])
 api_router.include_router(chat.router, tags=["chat"])
 api_router.include_router(tutor.router, tags=["tutor"])
+api_router.include_router(prompts.router, tags=["prompts"])

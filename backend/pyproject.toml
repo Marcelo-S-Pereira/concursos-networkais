@@ -35,6 +35,13 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 # preguiça - a regra existe para defaults mutáveis comuns, que continuam pegos.
 ignore = ["B008"]
 
+[tool.ruff.lint.per-file-ignores]
+# [125]: texto de prompt inteiro numa linha de dado (seed reusado pela
+# migration 0041 e por tests/conftest.py), não código — quebrar em várias
+# linhas mudaria a string ou exigiria escapar \n, arriscando divergir do
+# texto exato hoje em produção.
+"app/modules/prompts/seed.py" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Sem isso o pytest não acha o pacote `app` (a raiz do backend não entra no

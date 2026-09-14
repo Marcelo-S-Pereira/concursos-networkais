@@ -15,15 +15,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Question
 from app.modules.ai_registry import servico
+from app.modules.prompts import prompts
 
 FIGURAS_DIR = Path(__file__).resolve().parents[3].parent / "uploads" / "figuras"
 
-SISTEMA = (
-    "Você extrai UMA questão de prova de concurso e devolve SOMENTE um JSON válido, "
-    "sem texto antes ou depois. Não invente conteúdo, não inclua o gabarito, não "
-    "resolva a questão. Formato exigido: "
-    '{"enunciado": "...", "alternativas": {"A": "...", "B": "...", "C": "...", "D": "...", "E": "..."}}'
-)
+# [125]: texto em `prompts` (chave "transcricao_questao_sistema"), não mais aqui.
 
 
 def _parse_json_tolerante(texto: str) -> dict:
@@ -57,7 +53,7 @@ def transcrever_questao(db: Session, questao: Question) -> dict:
             raise ValueError("Imagem da página não encontrada para a leitura por visão.")
         b64 = base64.b64encode(img.read_bytes()).decode()
         mensagens = [
-            {"role": "system", "content": SISTEMA},
+            {"role": "system", "content": prompts.buscar(db, "transcricao_questao_sistema")},
             {
                 "role": "user",
                 "content": [
@@ -75,7 +71,7 @@ def transcrever_questao(db: Session, questao: Question) -> dict:
         txt = (FIGURAS_DIR / f"exam{questao.exam_id}_pagina{questao.pagina}.txt")
         pagina_texto = txt.read_text(encoding="utf-8") if txt.exists() else questao.enunciado
         mensagens = [
-            {"role": "system", "content": SISTEMA},
+            {"role": "system", "content": prompts.buscar(db, "transcricao_questao_sistema")},
             {"role": "user", "content": f"Texto da página (em colunas):\n\n{pagina_texto}\n\n"
                                         f"Extraia a questão de número {numero}."},
         ]

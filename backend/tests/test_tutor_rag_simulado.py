@@ -22,6 +22,9 @@ class _DbFake:
     def rollback(self): pass
 
 
+SISTEMA_FAKE = "SISTEMA-DE-TESTE-EXPLICAR"
+
+
 def test_explicar_questao_injeta_contexto_da_biblioteca_no_prompt():
     resposta_llm = (
         '{"diagnosis": "ok", "mini_lesson": "ok", '
@@ -40,6 +43,7 @@ def test_explicar_questao_injeta_contexto_da_biblioteca_no_prompt():
 
     with unittest.mock.patch("app.modules.tutor.tutor.servico.conversar", fake_conversar), \
          unittest.mock.patch("app.modules.tutor.tutor.contexto_biblioteca", fake_contexto), \
+         unittest.mock.patch("app.modules.tutor.tutor.prompts.buscar", return_value=SISTEMA_FAKE), \
          unittest.mock.patch("app.modules.tutor.tutor.resolver.cadeia_para_categoria", return_value=[]):
         tutor.explicar_questao(db=_DbFake(), questao=_QuestaoFake(), user_id=1, student_answer="A")
 
@@ -63,7 +67,8 @@ def test_explicar_questao_sem_biblioteca_nao_adiciona_nada():
 
     with unittest.mock.patch("app.modules.tutor.tutor.servico.conversar", fake_conversar), \
          unittest.mock.patch("app.modules.tutor.tutor.contexto_biblioteca", fake_contexto), \
+         unittest.mock.patch("app.modules.tutor.tutor.prompts.buscar", return_value=SISTEMA_FAKE), \
          unittest.mock.patch("app.modules.tutor.tutor.resolver.cadeia_para_categoria", return_value=[]):
         tutor.explicar_questao(db=_DbFake(), questao=_QuestaoFake(), user_id=1, student_answer="A")
 
-    assert prompts_recebidos[0] == tutor.SISTEMA  # sistema intocado, sem bloco extra
+    assert prompts_recebidos[0] == SISTEMA_FAKE  # sistema intocado, sem bloco extra

@@ -351,6 +351,52 @@ async def enviar_audio(cid: int, file: UploadFile = File(...), question_id: int 
     }
 
 
+class MensagemFaladaIn(BaseModel):
+    texto: str
+    question_id: int | None = None
+
+
+@router.post("/conversas/{cid}/mensagem-falada")
+def enviar_com_fala(cid: int, dados: MensagemFaladaIn,
+                    user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """[123]: mesma resposta de `/mensagem` (texto digitado), mas TAMBÉM fala
+    (TTS) — pro modo carro falar de volta mesmo quando o aluno digita em vez
+    de usar o microfone (antes só `/audio`, que exige gravação, disparava
+    voz; digitar com o modo carro ligado voltava calado). Mesmos gates de
+    `/mensagem`/`/audio` (limites rolantes + porta diária)."""
+    c = db.get(Conversation, cid)
+    if not c or not _dono(c, user):
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    if not dados.texto.strip():
+        raise HTTPException(status_code=422, detail="Escreva a mensagem.")
+
+    if motivo := limites.bloqueio(db, user.id, isento=_isento(user)):
+        raise HTTPException(status_code=429, detail=motivo)
+
+    if motivo := acesso_diario.abrir(db, user):
+        raise HTTPException(status_code=402, detail=motivo)
+
+    try:
+        resultado = responder_e_falar(db, c, dados.texto.strip(), dados.question_id)
+    except SemConexaoIA as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except AiCallError as e:
+        raise HTTPException(status_code=502, detail=f"IA falhou: {e}") from e
+
+    db.add(ChatMessage(conversation_id=cid, role="user", conteudo=dados.texto.strip(), question_id=dados.question_id))
+    db.add(ChatMessage(conversation_id=cid, role="assistant", conteudo=resultado["resposta"]))
+    if c.titulo == "Nova conversa":
+        c.titulo = dados.texto.strip()[:60]
+    db.commit()
+
+    return {
+        "resposta": resultado["resposta"],
+        "audio_b64": resultado["audio_b64"],
+        "saldo": saldo(db, user.id),
+        "limites": limites.estado(db, user.id, isento=_isento(user)),
+    }
+
+
 class VideosIn(BaseModel):
     termo: str
 

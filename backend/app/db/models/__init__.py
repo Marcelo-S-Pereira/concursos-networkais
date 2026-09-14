@@ -8,6 +8,7 @@ from app.db.models.estatistica import EmphasisPublicStat
 from app.db.models.feature import FeatureGrant, ResourceUsageLog
 from app.db.models.gemea import TwinQuestion
 from app.db.models.pagamento import PaymentPlatform
+from app.db.models.prompt import Prompt
 from app.db.models.questao import Choice, Exam, Question
 from app.db.models.rag import RagChunk, RagDocument
 from app.db.models.revisao import ReviewSchedule
@@ -34,6 +35,7 @@ __all__ = [
     "LlmTeachingOutput",
     "LoginCode",
     "PaymentPlatform",
+    "Prompt",
     "Question",
     "RagChunk",
     "RagDocument",
