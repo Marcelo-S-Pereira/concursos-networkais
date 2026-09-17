@@ -6,13 +6,14 @@ type Aba = "entrar" | "cadastrar"
 type Etapa = "email" | "codigo"
 type MetodoEntrar = "codigo" | "senha"
 
-export default function Acesso({ aoEntrar }: { aoEntrar: (u: Usuario) => void }) {
+/** [154]: só as abas Entrar/Criar conta, sem `<main>`/`<h1>` — a landing
+ * pública (`Landing.tsx`) embute isto na seção de cadastro, sem duplicar a
+ * lógica de login. `Acesso` (abaixo) continua existindo como tela
+ * standalone, pra quem cair direto aqui sem passar pela landing. */
+export function AcessoForm({ aoEntrar }: { aoEntrar: (u: Usuario) => void }) {
     const [aba, setAba] = useState<Aba>("entrar")
-
     return (
-        <main className="tela tela-acesso">
-            <h1>APP Concursos</h1>
-
+        <>
             <div className="abas" role="tablist">
                 <button role="tab" aria-selected={aba === "entrar"} className={aba === "entrar" ? "ativa" : ""} onClick={() => setAba("entrar")}>
                     Entrar
@@ -23,6 +24,15 @@ export default function Acesso({ aoEntrar }: { aoEntrar: (u: Usuario) => void })
             </div>
 
             {aba === "entrar" ? <Entrar aoEntrar={aoEntrar} /> : <Cadastrar aoConcluir={() => setAba("entrar")} />}
+        </>
+    )
+}
+
+export default function Acesso({ aoEntrar }: { aoEntrar: (u: Usuario) => void }) {
+    return (
+        <main className="tela tela-acesso">
+            <h1>ConcurseiroIA</h1>
+            <AcessoForm aoEntrar={aoEntrar} />
         </main>
     )
 }

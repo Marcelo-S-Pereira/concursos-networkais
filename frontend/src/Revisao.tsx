@@ -1,11 +1,11 @@
 import DOMPurify from "dompurify"
 import { useEffect, useState } from "react"
-import { api, type Questao } from "./api"
+import { api, type QuestaoRevisao } from "./api"
 
 const LETRAS = ["A", "B", "C", "D", "E"]
 
 export default function Revisao() {
-    const [devidas, setDevidas] = useState<Questao[] | null>(null)
+    const [devidas, setDevidas] = useState<QuestaoRevisao[] | null>(null)
     const [i, setI] = useState(0)
     const [resultado, setResultado] = useState<boolean | null>(null)
 
@@ -27,7 +27,10 @@ export default function Revisao() {
         <div className="revisao-view">
             <p className="sub">Revisão espaçada · {i + 1} de {devidas.length}</p>
             <article className="q-prova">
-                <header><strong>Questão {q.numero}</strong> <span className="disc">{q.disciplina}</span></header>
+                <header>
+                    <strong>Questão {q.numero}</strong> <span className="disc">{q.disciplina}</span>
+                    {q.origem === "chat" && <span className="badge-origem">Chat IA</span>}
+                </header>
                 {(q.enunciado.trim() || (q.enunciado_col2 && q.enunciado_col2.trim())) && (
                     q.enunciado_col2 && q.enunciado_col2.trim() ? (
                         <div className="enun-2col">

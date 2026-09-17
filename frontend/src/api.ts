@@ -55,6 +55,8 @@ export type Questao = {
     enunciado_col2: string; pergunta: string; gabarito: string | null; tem_figura: boolean; modo_exibicao: string; confianca: number; aviso: string
     revisada: boolean; descartada: boolean; alternativas: Choice[]
 }
+// [153]: só a rota de Revisão devolve isto — "simulado" ou "chat" (de onde veio o erro)
+export type QuestaoRevisao = Questao & { origem: "simulado" | "chat" }
 export type Exame = { id: number; banca: string; orgao: string; cargo: string; ano: number | null; total: number; revisar: number; excluido_em?: string | null }
 export type TempoEnfase = { enfase: string; amostra: number; mediana_s: number; media_s: number; p75_s: number }
 export type MasteryEnfase = { enfase: string; acertos: number; total: number; percentual: number; mastery: string; amostra: number }
@@ -81,7 +83,9 @@ export type Conversa = {
     modo: "chat" | "tutor"; persona: "professor" | "amigo"; modo_questao: "normal" | "random"; rag_doc_ids: number[]
     modelo_texto_id: number | null; modelo_visao_id: number | null
     modelo_voz_id: number | null; modelo_transcricao_id: number | null; modo_voz: boolean
+    voz_escolhida: string | null
 }
+export type VozKokoro = { id: string; rotulo: string }
 export type DocTutor = {
     id: number; titulo: string; descricao: string; indexado: boolean
     tentativas_indexacao: number; enviado_por: string | null
@@ -96,6 +100,8 @@ export type EditarConversaIn = {
     modelo_texto_id?: number | null; modelo_visao_id?: number | null
     modelo_voz_id?: number | null; modelo_transcricao_id?: number | null
     modo_voz?: boolean
+    voz_escolhida?: string | null
+    limpar_voz?: boolean
 }
 export type ChatMsg = { role: string; conteudo: string; question_id: number | null }
 export type JanelaUso = { usadas: number; limite: number; restam: number | null; reinicia_em?: string | null; libera_em?: string | null }
@@ -106,6 +112,18 @@ export type Orcamento = {
     gasto_hoje_usd: number; gasto_mes_usd: number
     pct_dia: number; pct_mes: number; projecao_mes_usd: number; diario_excedido: boolean
 }
+export type FilaEstado = {
+    max_concorrente: number; cpu_pct_max: number; mem_pct_max: number; disco_pct_max: number; timeout_espera_s: number
+    em_voo: number; esperando: number; cpu_pct: number; memoria_pct: number | null; disco_pct: number | null
+}
+export type FilaHistoricoLinha = {
+    quando: string; cpu_pct: number | null; memoria_pct: number | null; disco_pct: number | null
+    em_voo: number; esperando: number; max_concorrente: number
+    admitidas: number; rejeitadas: number; espera_media_ms: number | null
+}
+export type IconeEscolha = { tipo: "biblioteca" | "upload"; valor: string }
+export type IconesEstado = Record<string, IconeEscolha>
+export type IconeCatalogoLinha = { slot: string; grupo: string; rotulo: string; atual: IconeEscolha | null }
 export type CreditosResumo = {
     saldo: number; total_ganho: number; total_gasto: number
     extrato: { delta: number; tipo: string; descricao: string; quando: string | null }[]
@@ -230,7 +248,7 @@ export const api = {
         const res = await fetch(`/api/v1/exames/${examId}/pagina/${n}/texto`, { credentials: "include" })
         return res.ok ? res.text() : ""
     },
-    revisaoDevidas: () => pedir<Questao[]>("/revisao"),
+    revisaoDevidas: () => pedir<QuestaoRevisao[]>("/revisao"),
     responderRevisao: (qid: number, letra: string) => pedir<{ acertou: boolean }>(`/revisao/${qid}/responder`, { method: "POST", body: JSON.stringify({ letra }) }),
     gerarGemeas: (qid: number) => pedir<GemeaT[]>(`/exames/questoes/${qid}/gemeas`, { method: "POST" }),
     responderGemea: (twinId: number, letra: string) => pedir<{ acertou: boolean; gabarito: string }>(`/exames/gemeas/${twinId}/responder`, { method: "POST", body: JSON.stringify({ letra }) }),
@@ -264,10 +282,11 @@ export const api = {
     minhaPorta: () => pedir<MinhaPorta>("/creditos/porta"),
     creditosComprar: () => pedir<{ init_point: string; creditos: number; preco_reais: number }>("/creditos/comprar", { method: "POST" }),
     chatConversas: (modo: "chat" | "tutor" = "chat") => pedir<Conversa[]>(`/chat/conversas?modo=${modo}`),
-    chatCriarConversa: (exam_ids: number[], titulo: string, extra?: { modo?: "chat" | "tutor"; persona?: "professor" | "amigo"; modo_questao?: "normal" | "random"; rag_doc_ids?: number[]; modo_voz?: boolean }) =>
+    chatCriarConversa: (exam_ids: number[], titulo: string, extra?: { modo?: "chat" | "tutor"; persona?: "professor" | "amigo"; modo_questao?: "normal" | "random"; rag_doc_ids?: number[]; modo_voz?: boolean; voz_escolhida?: string | null }) =>
         pedir<Conversa>("/chat/conversas", { method: "POST", body: JSON.stringify({ exam_ids, titulo, ...extra }) }),
     chatMensagens: (cid: number) => pedir<Conversa & { mensagens: ChatMsg[] }>(`/chat/conversas/${cid}`),
     chatModelos: () => pedir<ModelosChat>("/chat/modelos"),
+    chatVozes: () => pedir<VozKokoro[]>("/chat/vozes"),
     chatEditarConversa: (cid: number, d: EditarConversaIn) =>
         pedir<Conversa>(`/chat/conversas/${cid}`, { method: "PATCH", body: JSON.stringify(d) }),
     chatDocumentosRag: () => pedir<DocChat[]>("/chat/documentos-rag"),
@@ -276,6 +295,9 @@ export const api = {
     chatEnviar: (cid: number, texto: string, question_id: number | null, imagem_b64?: string | null) => pedir<{ resposta: string; saldo: number; limites: LimitesUso }>(`/chat/conversas/${cid}/mensagem`, { method: "POST", body: JSON.stringify({ texto, question_id, imagem_b64: imagem_b64 ?? null }) }),
     // [123]: mesma resposta de chatEnviar, mas TAMBÉM fala (TTS) — pro modo
     // carro falar de volta mesmo quando o aluno digita em vez de usar o mic.
+    // [133]: `audio_url` (URL servida) foi tentada e REVERTIDA — a Cloudflare
+    // cacheava a resposta e servia sem checar sessão (vazamento real). Voltou
+    // pra `audio_b64` (o que já funcionava no celular).
     chatEnviarFalado: (cid: number, texto: string, question_id: number | null) =>
         pedir<{ resposta: string; audio_b64: string; saldo: number; limites: LimitesUso }>(
             `/chat/conversas/${cid}/mensagem-falada`, { method: "POST", body: JSON.stringify({ texto, question_id }) }),
@@ -303,6 +325,24 @@ export const api = {
     adminLimites: () => pedir<LimitesConfig>("/admin/limites"),
     salvarLimites: (sessao_msgs: number, semana_msgs: number) =>
         pedir<LimitesConfig>("/admin/limites", { method: "POST", body: JSON.stringify({ sessao_msgs, semana_msgs }) }),
+    adminFila: () => pedir<FilaEstado>("/admin/fila"),
+    salvarFila: (dados: Omit<FilaEstado, "em_voo" | "esperando" | "cpu_pct" | "memoria_pct" | "disco_pct">) =>
+        pedir<FilaEstado>("/admin/fila", { method: "POST", body: JSON.stringify(dados) }),
+    adminFilaHistorico: (dias: number) => pedir<FilaHistoricoLinha[]>(`/admin/fila/historico?dias=${dias}`),
+    icones: () => pedir<IconesEstado>("/icones"),
+    iconesCatalogo: () => pedir<IconeCatalogoLinha[]>("/icones/admin/catalogo"),
+    iconesEscolherBiblioteca: (slot: string, nome_icone: string) =>
+        pedir<IconeCatalogoLinha[]>(`/icones/admin/${encodeURIComponent(slot)}`, { method: "PUT", body: JSON.stringify({ nome_icone }) }),
+    iconesEnviarUpload: async (slot: string, arquivo: File) => {
+        const fd = new FormData(); fd.append("arquivo", arquivo)
+        const res = await fetch(`/api/v1/icones/admin/${encodeURIComponent(slot)}/upload`, { method: "POST", credentials: "include", body: fd })
+        if (!res.ok) { const c = await res.json().catch(() => null); throw new Error(c?.detail ?? "Falha ao enviar") }
+        return res.json() as Promise<IconeCatalogoLinha[]>
+    },
+    iconesRemover: (slot: string) => pedir<IconeCatalogoLinha[]>(`/icones/admin/${encodeURIComponent(slot)}`, { method: "DELETE" }),
+    enviarFeedback: (ferramenta: "chat" | "tutor_ia" | "simulado", estrelas: number | null, texto: string | null) =>
+        pedir<{ ok: boolean }>("/feedback", { method: "POST", body: JSON.stringify({ ferramenta, estrelas, texto }) }),
+    betaStatus: () => pedir<{ vagas_total: number; vagas_usadas: number; vagas_restantes: number }>("/auth/beta"),
     adminCreditar: (email: string, creditos: number, motivo: string) =>
         pedir<{ ok: boolean; saldo: number }>("/admin/creditar", { method: "POST", body: JSON.stringify({ email, creditos, motivo }) }),
     pagPlataformas: () => pedir<PlataformaPagamento[]>("/pagamentos"),

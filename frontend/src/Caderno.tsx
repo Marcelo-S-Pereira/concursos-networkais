@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify"
 import { useEffect, useRef, useState } from "react"
 import { api, ApiError, type Exame, type Explicacao, type GemeaT, type Questao, type ResultadoSimulado, type SimResultado, type SimRun } from "./api"
+import Feedback from "./Feedback"
 
 const LETRAS = ["A", "B", "C", "D", "E"]
 const MASTERY_ROTULO: Record<string, string> = {
@@ -38,6 +39,9 @@ export default function Caderno({ modo }: { modo: "celular" | "computador" }) {
     const visiveis = filtroId == null ? exames : exames.filter((e) => e.id === filtroId)
     return (
         <div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                <Feedback ferramenta="simulado" />
+            </div>
             {exames.length > 1 && (
                 <div className="caderno-filtro" role="group" aria-label="Filtrar caderno">
                     <button className={filtroId == null ? "sel" : ""} onClick={() => escolherFiltro(null)}>Todos</button>

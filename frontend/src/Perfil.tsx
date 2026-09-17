@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { api, type AdminOverview, type CreditosResumo, type EstadoHoje, type LimitesConfig, type Orcamento, type RecursoCatalogo, type ResumoSemana, type SaudeVPS, type Usuario, type UsuarioAdmin } from "./api"
+import { api, type AdminOverview, type CreditosResumo, type EstadoHoje, type FilaEstado, type FilaHistoricoLinha, type LimitesConfig, type Orcamento, type RecursoCatalogo, type ResumoSemana, type SaudeVPS, type Usuario, type UsuarioAdmin } from "./api"
 import CampoSecreto from "./CampoSecreto"
 
 const HIERARQUIA: Record<string, string> = {
@@ -178,6 +178,7 @@ export default function Perfil({
 
                     <CardOrcamento />
                     <CardLimites />
+                    <CardFila />
                     <ConcederCredito aoConcluir={aoRecarregarCreditos} />
                     <Campanhas aoConcluir={aoRecarregarCreditos} />
                 </div>
@@ -372,6 +373,95 @@ function CardLimites() {
                 Você (administrador) não é limitado. O <b>vitalício continua sujeito</b>: ele não paga crédito,
                 mas não pode queimar o orçamento sem teto — é exatamente para isso que o limite existe.
             </p>
+        </div>
+    )
+}
+
+/** [126]: fila de admissão para chamadas de IA — teto de concorrência
+ * editável (padrão 5, "sai 1 entra mais 1") + gate por CPU/memória/disco
+ * (padrão 78% os três, editáveis separadamente). Vale pra API do admin hoje
+ * e, quando a API compartilhada da comunidade ([119]) existir, pro mesmo
+ * ponto — sem precisar mexer aqui de novo. */
+function CardFila() {
+    const [f, setF] = useState<FilaEstado | null>(null)
+    const [historico, setHistorico] = useState<FilaHistoricoLinha[] | null>(null)
+    const [campos, setCampos] = useState({ max_concorrente: "", cpu_pct_max: "", mem_pct_max: "", disco_pct_max: "", timeout_espera_s: "" })
+    const [msg, setMsg] = useState("")
+
+    async function carregar() {
+        const r = await api.adminFila().catch(() => null)
+        setF(r)
+        if (r) {
+            setCampos({
+                max_concorrente: String(r.max_concorrente), cpu_pct_max: String(r.cpu_pct_max),
+                mem_pct_max: String(r.mem_pct_max), disco_pct_max: String(r.disco_pct_max),
+                timeout_espera_s: String(r.timeout_espera_s),
+            })
+        }
+    }
+    async function carregarHistorico() { setHistorico(await api.adminFilaHistorico(7).catch(() => null)) }
+    useEffect(() => { void carregar(); void carregarHistorico() }, [])
+
+    async function salvar() {
+        setMsg("")
+        try {
+            const r = await api.salvarFila({
+                max_concorrente: Number(campos.max_concorrente) || 1,
+                cpu_pct_max: Number(campos.cpu_pct_max) || 78,
+                mem_pct_max: Number(campos.mem_pct_max) || 78,
+                disco_pct_max: Number(campos.disco_pct_max) || 78,
+                timeout_espera_s: Number(campos.timeout_espera_s) || 60,
+            })
+            setF(r); setMsg("Salvo.")
+        } catch (e) { setMsg(e instanceof Error ? e.message : "Falha ao salvar.") }
+    }
+
+    if (!f) return null
+    return (
+        <div className="cartao">
+            <div className="saude-cab">
+                <strong>Fila de chamadas de IA</strong>
+                <button className="link" onClick={() => { carregar(); carregarHistorico() }} title="Atualizar">↻</button>
+            </div>
+            <p className="dica">
+                Limita quantas chamadas de IA ficam em andamento ao mesmo tempo — protege o servidor de
+                colapsar. Sai uma, entra mais uma. Também segura novas admissões se CPU, memória ou disco da
+                ambiente de execucao estiverem acima do limiar. Vale pra sua própria API e, no futuro, pra API que outros
+                usuários compartilharem em troca de créditos.
+            </p>
+            <div className="uso-grade">
+                <div className="uso-item destaque"><span className="uso-num">{f.em_voo}/{f.max_concorrente}</span><span className="uso-rot">em andamento</span></div>
+                <div className="uso-item"><span className="uso-num">{f.esperando}</span><span className="uso-rot">esperando vaga</span></div>
+                <div className="uso-item"><span className="uso-num">{f.cpu_pct}%</span><span className="uso-rot">CPU (teto {f.cpu_pct_max}%)</span></div>
+                <div className="uso-item"><span className="uso-num">{f.memoria_pct ?? "—"}%</span><span className="uso-rot">memória (teto {f.mem_pct_max}%)</span></div>
+                <div className="uso-item"><span className="uso-num">{f.disco_pct ?? "—"}%</span><span className="uso-rot">disco (teto {f.disco_pct_max}%)</span></div>
+            </div>
+            <div className="grade-estat">
+                <label>Requisições simultâneas<input value={campos.max_concorrente} onChange={(e) => setCampos({ ...campos, max_concorrente: e.target.value })} inputMode="numeric" /></label>
+                <label>Teto de CPU (%)<input value={campos.cpu_pct_max} onChange={(e) => setCampos({ ...campos, cpu_pct_max: e.target.value })} inputMode="decimal" /></label>
+                <label>Teto de memória (%)<input value={campos.mem_pct_max} onChange={(e) => setCampos({ ...campos, mem_pct_max: e.target.value })} inputMode="decimal" /></label>
+                <label>Teto de disco (%)<input value={campos.disco_pct_max} onChange={(e) => setCampos({ ...campos, disco_pct_max: e.target.value })} inputMode="decimal" /></label>
+                <label>Espera máxima na fila (s)<input value={campos.timeout_espera_s} onChange={(e) => setCampos({ ...campos, timeout_espera_s: e.target.value })} inputMode="numeric" /></label>
+            </div>
+            <div className="linha-acoes"><button onClick={salvar}>Salvar</button>{msg && <span className="dica">{msg}</span>}</div>
+
+            {historico && historico.length > 0 && (
+                <details className="uso-erros">
+                    <summary>Histórico dos últimos 7 dias (amostra a cada 3 min) — {historico.length} pontos</summary>
+                    <ul>
+                        {historico.slice(-20).reverse().map((h, i) => (
+                            <li key={i}>
+                                <span className="uso-erro-quando">{new Date(h.quando).toLocaleString("pt-BR")}</span>
+                                <span className="uso-erro-origem">CPU {h.cpu_pct ?? "—"}% · mem {h.memoria_pct ?? "—"}% · disco {h.disco_pct ?? "—"}%</span>
+                                <span className="uso-erro-msg">
+                                    {h.admitidas} admitida(s){h.rejeitadas > 0 ? ` · ${h.rejeitadas} rejeitada(s)` : ""}
+                                    {h.espera_media_ms !== null ? ` · espera média ${h.espera_media_ms}ms` : ""}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </details>
+            )}
         </div>
     )
 }

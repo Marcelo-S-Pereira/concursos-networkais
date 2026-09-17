@@ -159,6 +159,30 @@ button.secundario { background: transparent; color: var(--suave); border: 1px so
 }
 .questao header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .questao .disc { color: var(--suave); font-size: .85rem; }
+/* [153]: distingue erro agendado pelo Chat de estudo do agendado pelo Simulado */
+.badge-origem {
+    font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+    background: var(--azul, #2563eb); color: #fff;
+}
+
+/* [153]: widget de feedback (estrelas + texto), reusado em Chat/Tutor IA/Simulado */
+.feedback-abrir {
+    background: transparent; border: 1px solid var(--borda); color: var(--suave);
+    font-size: .78rem; padding: 3px 10px; border-radius: 20px; margin-left: auto;
+}
+.feedback-caixa {
+    background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px;
+    padding: 10px; margin-left: auto; width: min(260px, 100%);
+}
+.feedback-estrelas { display: flex; gap: 4px; margin-bottom: 6px; }
+.feedback-estrelas button {
+    background: none; border: none; font-size: 1.3rem; color: var(--borda);
+    cursor: pointer; padding: 0; line-height: 1;
+}
+.feedback-estrelas button.on { color: #f5a623; }
+.feedback-caixa textarea { width: 100%; font-size: .85rem; }
+.feedback-botoes { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.feedback-obrigado { font-size: .85rem; color: var(--ok); margin-left: auto; }
 .conf { margin-left: auto; font-size: .8rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; color: #fff; }
 .conf.ok { background: var(--ok); }
 .conf.medio { background: #b8860b; }
@@ -346,9 +370,14 @@ button.ia:hover { background: #5b21b6; }
 
 /* --- chave celular/computador --- */
 .topo-acoes { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* [161]: trocado de emoji (📱/🖥, rendering inconsistente entre SO/
+   navegador) pra ícone SVG (`currentColor`) — por isso agora precisa de
+   `color` explícito: sem isso o ícone herdava o branco do `button{}` base
+   sobre fundo transparente e ficava quase invisível fora do estado ativo. */
 .chave-modo { display: inline-flex; border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
-.chave-modo button { min-height: 0; padding: 6px 10px; background: transparent; border: 0; font-size: 1rem; }
-.chave-modo button.on { background: var(--texto); }
+.chave-modo button { min-height: 0; padding: 6px 10px; background: transparent; border: 0; font-size: 1rem; color: var(--suave); }
+.chave-modo button:hover { color: var(--texto); }
+.chave-modo button.on { background: var(--texto); color: var(--cartao); }
 
 /* larguras por modo */
 .tela.modo-celular { max-width: 480px; }
@@ -485,6 +514,15 @@ button.ia:hover { background: #5b21b6; }
 .caderno-linha.excluido .caderno-cab { cursor: default; background: transparent; }
 .form-caderno h3 { margin: 0 0 10px; font-size: .95rem; }
 .form-caderno input[type=file] { font-size: .8rem; }
+
+/* --- [128]: ícones customizáveis (menu, compositor, ações de estudo) --- */
+.icone-custom, .icone-custom-wrap { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
+img.icone-custom { width: 18px; height: 18px; object-fit: contain; }
+.icone-preview { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; }
+.grade-icones { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; max-height: 260px; overflow-y: auto; margin-top: 8px; }
+.icone-opcao { display: flex; align-items: center; justify-content: center; padding: 8px; border: 1px solid var(--borda); border-radius: 8px; background: var(--cartao); cursor: pointer; }
+.icone-opcao:hover { border-color: var(--texto); }
+.icone-opcao.sel { border-color: var(--texto); background: var(--fundo); box-shadow: inset 0 0 0 1px var(--texto); }
 
 /* --- dropzone de importação --- */
 .dropzone {
@@ -686,6 +724,14 @@ button.ia:hover { background: #5b21b6; }
 .chat-bolha.pensando { color: var(--suave); font-style: italic; }
 .cartao.orcamento.estourado { border-color: var(--falha); }
 .chat-erro { padding: 6px 16px; margin: 0; font-size: .82rem; }
+/* [132]: botão que aparece quando o autoplay da resposta falada falha — um
+   clique real sempre passa pela política de autoplay do navegador, então
+   isso destrava o áudio independente da causa exata do bloqueio. */
+.btn-ouvir-pendente {
+    margin: 0 16px 8px; width: calc(100% - 32px);
+    background: var(--falha); color: #fff;
+    animation: pulsar-grav 1s ease-in-out infinite;
+}
 
 /* Compositor: caixa única, campo em linha própria e botões embaixo — o campo
    NUNCA divide largura com os botões (foi isso que o deixou com 6px antes). */
@@ -702,6 +748,44 @@ button.ia:hover { background: #5b21b6; }
                        font-size: .92rem; line-height: 1.5; min-height: 46px; padding: 4px 2px; color: var(--texto); }
 .chat-botoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; position: relative; }
 .chat-espaco { flex: 1; }
+/* [157]: fileira de controles do Tutor IA — desceu pra depois do Enviar, pra
+   deixar o textarea livre (era isso que crescia colado em cima dele antes). */
+.chat-botoes-baixo { margin-top: 8px; }
+.chat-botoes-baixo .pill.icone-so { padding: 7px 10px; min-width: 34px; justify-content: center; }
+/* [159]: "Tempo real" é o mais importante do grupo — colado no Enviar,
+   maior e em preto e branco de verdade (não o cinza-suave que `.pill` usa
+   por padrão pros outros ícones) — `var(--texto)` já é preto no claro e
+   branco no escuro, então continua "preto e branco" nos dois temas em vez
+   de travar numa cor só que sumiria no escuro. (`width`/`height` do SVG são
+   atributos de apresentação, CSS de classe sobrepõe sem tocar em Icone.tsx.) */
+.chat-botoes-baixo .pill.icone-destaque { padding: 10px 16px; color: var(--texto); }
+.icone-destaque .icone-custom-wrap, .icone-destaque .icone-custom { width: 30px; height: 30px; }
+/* [159]: Enviar também virou ícone — redondo, mantendo os 44px de alvo de
+   toque (`button{min-height:44px}` já garantia isso pro texto; aqui só
+   ganha largura igual pra ficar círculo, não retângulo comprido à toa). */
+.btn-enviar { width: 44px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+
+/* [160]: botão "ir ao topo" — o usuário achou sem sentido flutuar no canto
+   de cima das mensagens; pediu explicitamente ACIMA do Enviar, com folga
+   (não colado nele). `.chat-compositor` já é `position:relative` (mesma
+   base do [093], que resolveu sobreposição de botão flutuante do mesmo
+   jeito) — o botão vira filho dele, ancorado por `bottom:100%` (sobe pra
+   cima da caixa toda) + a folga real vem do próprio espaçamento abaixo. */
+.btn-topo {
+    position: absolute; bottom: calc(100% + 10px); right: 16px; z-index: 4;
+    min-height: 0; width: 32px; height: 32px; padding: 0; border-radius: 50%;
+    background: var(--cartao); border: 1px solid var(--borda); box-shadow: 0 1px 4px rgba(0,0,0,.12);
+    /* [162]: sem isso o ícone (currentColor) herdava `color:var(--cartao)`
+       do `button{}` base (regra direta, não a herdada de `body`) — branco
+       sobre o próprio fundo branco, invisível. Mesmo bug do `.chave-modo`
+       corrigido junto nesta entrada. */
+    display: inline-flex; align-items: center; justify-content: center; color: var(--texto);
+}
+.btn-topo:hover { border-color: var(--texto); }
+/* [163]: par subir/descer, lado a lado — o de descer fica mais à direita
+   (32px do botão + 8px de vão = 56px), colado no mesmo alinhamento do
+   "ir ao topo" em vez de empilhado embaixo dele. */
+.btn-topo-fim { right: 56px; }
 .chat-enviar { min-height: 0; padding: 7px 15px; font-weight: 600; font-size: .84rem; }
 .chat-anexo { display: flex; align-items: center; gap: 6px; font-size: .74rem; color: var(--suave); padding: 2px 2px 4px; }
 .busca-video-bloco { margin: 4px 0; }
@@ -888,3 +972,69 @@ button.ia:hover { background: #5b21b6; }
    preenche sólido (mesma cor do botão primário) pra ficar óbvio que está
    ligado, sem precisar abrir nada pra saber. */
 .pill.voz-mode.ativo { background: var(--texto); color: var(--cartao); border-color: var(--texto); }
+
+/* [154]/[155]: landing pública — mobile-first, larga o bastante pra grade de
+   recursos e o hero de 2 colunas respirarem em telas maiores. */
+.tela.landing { max-width: 1080px; padding: 0 0 48px; }
+
+/* Hero: 1 coluna no celular (texto, depois o formulário — ordem natural de
+   leitura); 2 colunas no desktop, formulário AO LADO do texto — pedido
+   explícito do usuário, resolve o espaço vazio e tira o form de "lá embaixo". */
+.landing-hero {
+    display: grid; grid-template-columns: 1fr; gap: 28px; align-items: center;
+    padding: 40px 20px 32px; border-bottom: 1px solid var(--borda); margin-bottom: 32px;
+}
+@media (min-width: 860px) { .landing-hero { grid-template-columns: 1.1fr .9fr; gap: 40px; padding: 56px 32px 48px; } }
+.landing-hero-texto { text-align: center; }
+@media (min-width: 860px) { .landing-hero-texto { text-align: left; } }
+.landing-hero h1 { font-size: clamp(1.8rem, 4.2vw, 2.7rem); margin: 12px 0 14px; }
+.badge-beta {
+    display: inline-block; font-size: .78rem; font-weight: 700; letter-spacing: .04em;
+    padding: 4px 12px; border-radius: 20px; background: var(--azul); color: #fff;
+}
+.landing-slogan { max-width: 560px; margin: 0 auto 18px; color: var(--suave); font-size: 1.05rem; }
+@media (min-width: 860px) { .landing-slogan { margin: 0 0 18px; } }
+.beta-contador { font-size: 1rem; margin: 0 0 4px; }
+.landing-beta-explica { color: var(--suave); font-size: .9rem; margin: 0; }
+.landing-hero-form { display: flex; justify-content: center; }
+.landing-hero-form .cartao-acesso { margin: 0; width: 100%; }
+
+.landing-video { padding: 0 20px; margin-bottom: 40px; text-align: center; }
+.landing-video h2 { font-size: 1.3rem; margin-bottom: 4px; }
+.landing-video-legenda { color: var(--suave); font-size: .88rem; margin: 0 0 16px; }
+.landing-video video {
+    width: 100%; max-width: 860px; border-radius: 12px; border: 1px solid var(--borda);
+    background: #000;
+}
+
+/* Cada recurso principal: imagem real + texto, alternando de lado a cada um
+   ("crie sessões onde a pessoa vai descendo e vendo além de lendo"). */
+.landing-recursos { padding: 0 20px; display: flex; flex-direction: column; gap: 40px; margin-bottom: 48px; }
+.landing-showcase {
+    display: grid; grid-template-columns: 1fr; gap: 20px; align-items: center;
+}
+@media (min-width: 760px) { .landing-showcase { grid-template-columns: 1fr 1fr; gap: 32px; } }
+.landing-showcase.invertido .landing-showcase-img { order: 1; }
+@media (min-width: 760px) { .landing-showcase.invertido .landing-showcase-img { order: 2; } }
+.landing-showcase-img img {
+    width: 100%; border-radius: 12px; border: 1px solid var(--borda); display: block;
+}
+.landing-showcase-texto h3 { font-size: 1.25rem; margin: 0 0 10px; }
+.landing-showcase-texto ul { margin: 0; padding-left: 20px; color: var(--suave); font-size: .94rem; }
+.landing-showcase-texto li { margin-bottom: 8px; }
+
+.landing-recursos-sec { padding: 0 20px; margin-bottom: 40px; }
+.landing-recursos-sec h2 { text-align: center; font-size: 1.3rem; margin-bottom: 24px; }
+.landing-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 640px) { .landing-grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 960px) { .landing-grid { grid-template-columns: 1fr 1fr 1fr; } }
+.landing-card {
+    background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 18px;
+}
+.landing-card h3 { margin: 0 0 8px; font-size: 1.05rem; }
+.landing-card ul { margin: 0; padding-left: 18px; color: var(--suave); font-size: .9rem; }
+.landing-card li { margin-bottom: 6px; }
+
+.cartao-acesso { max-width: 420px; margin: 0 auto; }
+.landing-footer { text-align: center; color: var(--suave); font-size: .85rem; padding: 20px; }
+.landing-footer a { color: inherit; }

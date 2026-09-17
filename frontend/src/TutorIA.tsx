@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react"
-import { api, type ChatMsg, type Conversa, type DocTutor, type MeuRecurso, type ModelosChat } from "./api"
-import { Corpo, PopupIA, PopupVoz, checarMicrofone, calcularRms, tipoAudioSuportado, type CampoModelo, type EstadoMic } from "./Chat"
+import { api, type ChatMsg, type Conversa, type DocTutor, type MeuRecurso, type ModelosChat, type VozKokoro } from "./api"
+import { Corpo, Popup, PopupIA, calcularRms, tipoAudioSuportado, desbloquearAudio, tocarAudioResposta, type CampoModelo } from "./Chat"
 import SeletorLista from "./SeletorLista"
+import Icone from "./Icone"
+import Feedback from "./Feedback"
+import { VozTempoReal } from "./vozTempoReal"
 
 /** [111]: extrai o ID de um link do YouTube em qualquer formato comum
  *  (watch?v=, youtu.be/, embed/, shorts/) — null se não reconhecer. */
@@ -33,7 +36,7 @@ function fmtProgresso(decorridoS: number, totalS: number | null): string {
  * enviados entram na Biblioteca do admin, com a autoria do usuário, e já
  * ficam disponíveis pra escolher (e, se enviados dentro de uma conversa
  * ativa, já entram na seleção dela automaticamente). */
-export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
+export default function TutorIA({ aoGastar }: { aoGastar?: () => void; modo: "celular" | "computador" }) {
     const [conversas, setConversas] = useState<Conversa[]>([])
     const [ativa, setAtiva] = useState<number | null>(null)
     const [msgs, setMsgs] = useState<ChatMsg[]>([])
@@ -49,6 +52,7 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
     const [recursos, setRecursos] = useState<Record<string, MeuRecurso>>({})
     // [123]: seletor de IA por categoria, mesmo mecanismo do Chat de estudo.
     const [modelos, setModelos] = useState<ModelosChat | null>(null)
+    const [vozes, setVozes] = useState<VozKokoro[] | null>(null)
     const [cfgAberta, setCfgAberta] = useState(false)
     const [linkVideo, setLinkVideo] = useState("")
     const [enviandoVideo, setEnviandoVideo] = useState(false)
@@ -60,15 +64,15 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
     const [gravando, setGravando] = useState(false)
     const [gravSeg, setGravSeg] = useState(0)
     const [respondendoVoz, setRespondendoVoz] = useState(false)
-    const [mic, setMic] = useState<EstadoMic>(null)
-    const [vozAberta, setVozAberta] = useState(false)
+    // [157]: seletor de persona virou popup (mais personas no futuro), igual
+    // ao seletor de modelo — "cfgAberta" já existia pra esse.
+    const [personaAberta, setPersonaAberta] = useState(false)
     // [120]: "modo carro" — liga uma vez, fica ouvindo, fala, envia e responde
     // sozinho (mesmo mecanismo do Chat de estudo, [096], reusado aqui: nível
     // de som via Web Audio API, não reconhecimento de voz de verdade).
     const [maosLivres, setMaosLivres] = useState(false)
     const [ouvindo, setOuvindo] = useState(false)
     const gravadorRef = useRef<MediaRecorder | null>(null)
-    const chunksRef = useRef<Blob[]>([])
     const gravCronRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const gravInicioRef = useRef<number | null>(null)
     const streamMLRef = useRef<MediaStream | null>(null)
@@ -77,7 +81,6 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
     const bufferMLRef = useRef<Float32Array<ArrayBuffer> | null>(null)
     const rafMLRef = useRef<number | null>(null)
     const limiarMLRef = useRef(0.02)
-    const inicioFalaRef = useRef<number | null>(null)
     const inicioSilencioRef = useRef<number | null>(null)
     const maosLivresRef = useRef(false)   // o loop de RAF lê isto, não o state (fecharia sobre valor velho)
     const pausarEscutaRef = useRef(false) // true enquanto processa/a resposta falada toca — nunca ouve o próprio áudio da IA
@@ -88,9 +91,147 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
     const cronVideoRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const audioRef = useRef<HTMLAudioElement>(null)
     const fimRef = useRef<HTMLDivElement>(null)
+    const topoRef = useRef<HTMLDivElement>(null)  // [164]: pro botão "ir ao topo" — marcador no início de `.chat-msgs`
     const arquivoRef = useRef<HTMLInputElement>(null)
+    // [132]: mesmo mecanismo do Chat de estudo — quando o autoplay falha, guarda
+    // a resposta pendente pra um botão de clique real tocar (clique sempre passa
+    // pela política de autoplay, independente da causa exata do bloqueio).
+    const [audioPendente, setAudioPendente] = useState(false)
+    const pendenteDevolverRef = useRef<(() => void) | null>(null)
+    // [135]: guarda o último áudio pendente em base64, pra um 2º mecanismo de
+    // reprodução (Web Audio API) poder tentar tocar o MESMO áudio se o
+    // <audio> nativo falhar — teste isolado (Etapa 18 do roteiro do GPT)
+    // pra descobrir se o problema é especificamente o HTMLAudioElement neste
+    // ambiente, sem precisar da arquitetura de streaming inteira ainda.
+    const ultimoAudioB64Ref = useRef<string | null>(null)
+    const webAudioCtxRef = useRef<AudioContext | null>(null)
     const conversa = conversas.find((c) => c.id === ativa) ?? null
     const videoId = extrairIdYoutube(linkVideo)
+
+    /** [135]: decodifica o MESMO base64 que o <audio> tentou tocar, mas via
+     *  Web Audio API (AudioContext + AudioBufferSourceNode) — API do
+     *  navegador diferente do HTMLAudioElement. Se isso funcionar onde o
+     *  <audio> falha, prova que o problema é do elemento, não da política de
+     *  autoplay nem da fonte do áudio (base64/URL) — informação real, não
+     *  suposição, sem precisar construir streaming de chunks ainda. */
+    async function tocarViaWebAudio(base64: string): Promise<void> {
+        if (!webAudioCtxRef.current) webAudioCtxRef.current = new AudioContext()
+        const ctx = webAudioCtxRef.current
+        if (ctx.state === "suspended") await ctx.resume()
+        const binario = atob(base64)
+        const bytes = new Uint8Array(binario.length)
+        for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i)
+        const buffer = await ctx.decodeAudioData(bytes.buffer.slice(0))
+        const fonte = ctx.createBufferSource()
+        fonte.buffer = buffer
+        fonte.connect(ctx.destination)
+        fonte.start()
+        console.log("[WEB AUDIO PLAY OK]", { duracao: buffer.duration, sampleRate: buffer.sampleRate, ctxState: ctx.state })
+    }
+
+    // [135]: conversa por voz em TEMPO REAL — STT/LLM/TTS todos em streaming
+    // por um WebSocket próprio (ver vozTempoReal.ts), diferente do modo voz
+    // "grava→sobe→transcreve→responde→fala" de cima. Só desktop, experimental,
+    // módulo isolado — nada aqui toca no que já funciona.
+    const [vtrAtivo, setVtrAtivo] = useState(false)
+    const [vtrEstado, setVtrEstado] = useState<"conectando" | "ouvindo" | "processando" | "falando" | "encerrado">("encerrado")
+    const [vtrTranscricao, setVtrTranscricao] = useState("")
+    const [vtrResposta, setVtrResposta] = useState("")
+    const [vtrErro, setVtrErro] = useState<string | null>(null)
+    // [145]: aviso informativo (ex: STT reconectou sozinho) — separado do
+    // erro pra não parecer que a sessão quebrou quando ela só se recuperou.
+    const [vtrAviso, setVtrAviso] = useState<string | null>(null)
+    const vtrRef = useRef<VozTempoReal | null>(null)
+
+    async function alternarVozTempoReal() {
+        if (vtrAtivo) {
+            vtrRef.current?.parar()
+            vtrRef.current = null
+            setVtrAtivo(false)
+            return
+        }
+        if (ativa == null) return
+        setVtrErro(null)
+        setVtrAviso(null)
+        setVtrTranscricao("")
+        setVtrResposta("")
+        let respostaAcumulada = ""
+        // [136]: pedido do usuário — cada palavra falada precisa aparecer na
+        // tela (igual assistentes de IA), não só numa tarja de status discreta.
+        // O PARCIAL vive só em vtrTranscricao/vtrResposta (bolha "ao vivo",
+        // renderizada à parte); ao FINALIZAR, vira mensagem de verdade em
+        // `msgs` (persiste na tela, mesmo formato das mensagens digitadas).
+        const sessao = new VozTempoReal(ativa, (ev) => {
+            if (ev.tipo === "estado") {
+                // [151]: log real — pra saber se "ouvindo" chega ANTES do
+                // texto/áudio da resposta terminarem (achado relatado: balão
+                // some/some aparecer enquanto o Kokoro ainda fala).
+                console.log(`[VTR-UI] estado -> ${ev.valor} (respostaAcumulada.length=${respostaAcumulada.length})`)
+                setVtrEstado(ev.valor)
+                if (ev.valor === "ouvindo") {
+                    if (respostaAcumulada.trim()) {
+                        setMsgs((m) => [...m, { role: "assistant", conteudo: respostaAcumulada.trim(), question_id: null }])
+                    }
+                    respostaAcumulada = ""
+                    setVtrResposta("")
+                }
+            } else if (ev.tipo === "transcricao_parcial") {
+                setVtrTranscricao(ev.texto)
+            } else if (ev.tipo === "transcricao_final") {
+                setVtrTranscricao("")
+                // [146]: achado real — sem o trim, um commit disparado por
+                // ruído/silêncio (sem fala de verdade) faz a Together
+                // devolver transcrição vazia/só espaço, e isso virava um
+                // balão de usuário vazio, persistido pra sempre na conversa.
+                if (ev.texto.trim()) {
+                    setMsgs((m) => [...m, { role: "user", conteudo: ev.texto, question_id: null }])
+                }
+            } else if (ev.tipo === "resposta_parcial") {
+                respostaAcumulada += ev.texto
+                // [151]: log real — timestamp de cada pedaço de texto que
+                // chega, pra saber se o problema é "não chega" ou "chega mas
+                // não aparece na tela" (achado relatado: balão não cresce).
+                console.log(`[VTR-UI] resposta_parcial t=${performance.now().toFixed(0)}ms len_total=${respostaAcumulada.length}`)
+                setVtrResposta(respostaAcumulada)
+            } else if (ev.tipo === "erro") {
+                setVtrErro(ev.detalhe)
+            } else if (ev.tipo === "aviso") {
+                setVtrAviso(ev.detalhe)
+            }
+        })
+        vtrRef.current = sessao
+        setVtrAtivo(true)
+        try {
+            await sessao.iniciar()
+        } catch (e) {
+            setVtrErro(e instanceof Error ? e.message : "Falha ao iniciar a conversa por voz.")
+            setVtrAtivo(false)
+            vtrRef.current = null
+        }
+    }
+
+    useEffect(() => () => vtrRef.current?.parar(), [])  // encerra a sessão se o componente desmontar
+
+    /** [144]: celular e desktop tratados IGUAL — pedido do usuário, pra
+     *  funcionar por ativação só de voz (útil dirigindo, sem precisar
+     *  clicar em nada). O [134] fazia o desktop nunca tentar tocar sozinho
+     *  (ia direto pro botão manual) por falhas de autoplay medidas na época;
+     *  como `ativarMaosLivres()` já desbloqueia o `<audio>` dentro do
+     *  clique real que liga o modo voz (mesmo mecanismo que já faz o
+     *  celular tocar sozinho), a tentativa automática merece uma chance
+     *  real em vez de ser pulada de propósito. O botão "🔊 Ouvir resposta"
+     *  continua existindo como rede de segurança — só aparece se a
+     *  tentativa automática realmente falhar, nos dois dispositivos. */
+    async function tocarResposta(audioEl: HTMLAudioElement | null, audioB64: string, devolverEscuta: () => void) {
+        ultimoAudioB64Ref.current = audioB64
+        const src = `data:audio/mpeg;base64,${audioB64}`
+        const res = await tocarAudioResposta(audioEl, src, devolverEscuta)
+        if (!res.tocou) {
+            setErro(`A resposta chegou, mas o áudio não tocou sozinho (${res.erroNome ?? "erro desconhecido"}). Toque em "🔊 Ouvir resposta" abaixo.`)
+            pendenteDevolverRef.current = devolverEscuta
+            setAudioPendente(true)
+        }
+    }
 
     async function carregarConversas() { setConversas(await api.chatConversas("tutor").catch(() => [])) }
     async function carregarDocs() { setDocs(await api.tutorDocumentos().catch(() => [])) }
@@ -99,9 +240,20 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         void carregarDocs()
         api.chatRecursos().then(setRecursos).catch(() => setRecursos({}))
         api.chatModelos().then(setModelos).catch(() => setModelos(null))
-        checarMicrofone(false).then(setMic).catch(() => setMic(null))
+        api.chatVozes().then(setVozes).catch(() => setVozes(null))
     }, [])
-    useEffect(() => { fimRef.current?.scrollIntoView({ behavior: "smooth" }) }, [msgs])
+    // [152]: `vtrResposta`/`vtrTranscricao` mudam a cada pedacinho de texto
+    // (várias vezes por segundo durante o "Tempo real", [136]) — antes,
+    // CADA mudança disparava um `scrollIntoView({behavior:"smooth"})` novo,
+    // cancelando a animação anterior no meio e competindo por tempo de
+    // layout/paint bem na hora em que o microfone também está processando
+    // áudio continuamente ([096]/[136]). Coalescer num único scroll por
+    // frame (a mudança mais recente sempre vence) reduz esse trabalho sem
+    // mudar o resultado final (ainda termina rolado até o fim).
+    useEffect(() => {
+        const id = requestAnimationFrame(() => fimRef.current?.scrollIntoView({ behavior: "smooth" }))
+        return () => cancelAnimationFrame(id)
+    }, [msgs, vtrTranscricao, vtrResposta])
     useEffect(() => {
         if (!videoId) { setInfoVideo(null); return }
         let vivo = true
@@ -147,6 +299,12 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         await carregarConversas()
     }
 
+    async function trocarVoz(voz: string | null) {
+        if (ativa == null) return
+        await api.chatEditarConversa(ativa, voz === null ? { limpar_voz: true } : { voz_escolhida: voz })
+        await carregarConversas()
+    }
+
     async function alternarConhecimentoAtivo(docId: number) {
         if (ativa == null || !conversa) return
         const atual = new Set(conversa.rag_doc_ids)
@@ -175,15 +333,7 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
                 aoGastar?.()
                 const audioEl = audioRef.current
                 if (audioEl) {
-                    audioEl.onended = devolverEscuta
-                    audioEl.onerror = devolverEscuta
-                    audioEl.src = `data:audio/mpeg;base64,${r.audio_b64}`
-                    try {
-                        await audioEl.play()
-                    } catch {
-                        setErro("A resposta chegou, mas o navegador bloqueou o áudio automático. Toque em qualquer botão do chat uma vez pra liberar o som.")
-                        devolverEscuta()
-                    }
+                    await tocarResposta(audioEl, r.audio_b64, devolverEscuta)
                 } else devolverEscuta()
             } else {
                 const r = await api.chatEnviar(ativa, msg, null)
@@ -196,6 +346,42 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
             setErro(e instanceof Error ? e.message : "Falha ao falar com o tutor.")
             if (maosLivres) devolverEscuta()
         } finally { setEnviando(false) }
+    }
+
+    /** [132]: toca a resposta pendente a partir de um CLIQUE real — a
+     *  política de autoplay do navegador sempre permite reprodução iniciada
+     *  assim, funciona independente da causa exata do bloqueio automático. */
+    async function tocarManual() {
+        const audioEl = audioRef.current
+        try {
+            await audioEl?.play()
+            console.log("[TTS PLAY MANUAL OK — audio element]")
+            setErro(null)
+            return
+        } catch (err) {
+            const e = err as DOMException
+            console.error("[TTS PLAY MANUAL FAILED — audio element]", { name: e?.name, message: e?.message })
+            // [135]: 2ª tentativa, API diferente do navegador (Web Audio, não
+            // HTMLAudioElement) — só roda se a 1ª falhou, mesmo áudio, mesmo
+            // clique real (ainda dentro do mesmo gesto síncrono).
+            if (ultimoAudioB64Ref.current) {
+                try {
+                    await tocarViaWebAudio(ultimoAudioB64Ref.current)
+                    setErro(null)
+                    return
+                } catch (err2) {
+                    const e2 = err2 as Error
+                    console.error("[WEB AUDIO PLAY FAILED]", { name: e2?.name, message: e2?.message })
+                    setErro(`Nada tocou por nenhum dos dois mecanismos (elemento: ${e?.name ?? "?"}; Web Audio: ${e2?.name ?? "?"}). Verifique se a aba/site está silenciado (clique com o botão direito na aba) ou a saída de áudio do sistema.`)
+                    return
+                }
+            }
+            setErro(`Mesmo com o clique direto, o áudio não tocou (${e?.name ?? "erro desconhecido"}).`)
+        } finally {
+            setAudioPendente(false)
+            pendenteDevolverRef.current?.()
+            pendenteDevolverRef.current = null
+        }
     }
 
     async function enviarArquivos(arquivos: FileList) {
@@ -268,11 +454,6 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         if (gravadorVideoRef.current && gravadorVideoRef.current.state !== "inactive") gravadorVideoRef.current.stop()
     }
 
-    async function abrirPopupVoz() {
-        setVozAberta((v) => !v)
-        if (mic == null) setMic(await checarMicrofone(false))
-    }
-
     /** Envia o áudio gravado (aperta-e-segura OU mãos-livres) — transcreve,
      *  responde, fala de volta. Lê `ativa` pelo REF, não pelo state fechado
      *  em closure — chamada tanto de um clique síncrono quanto de dentro do
@@ -296,15 +477,7 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
             aoGastar?.()
             const audioEl = audioRef.current
             if (audioEl) {
-                audioEl.onended = devolverEscuta
-                audioEl.onerror = devolverEscuta
-                audioEl.src = `data:audio/mpeg;base64,${r.audio_b64}`
-                try {
-                    await audioEl.play()
-                } catch {
-                    setErro("A resposta chegou, mas o navegador bloqueou o áudio automático. Toque em qualquer botão do chat uma vez pra liberar o som.")
-                    devolverEscuta()
-                }
+                await tocarResposta(audioEl, r.audio_b64, devolverEscuta)
             } else {
                 devolverEscuta()
             }
@@ -314,40 +487,12 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         } finally { setRespondendoVoz(false) }
     }
 
-    /** Aperta o 🎤: pede o microfone de verdade (stream novo, fechado ao
-     *  soltar) e grava. Desabilitado enquanto o mãos-livres está ligado —
-     *  dois `MediaRecorder` no mesmo microfone não faz sentido. */
-    async function iniciarGravacao() {
-        if (gravando || respondendoVoz || maosLivres || ativa == null) return
-        setErro(null)
-        let stream: MediaStream
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        } catch (e) {
-            const negada = e instanceof DOMException && e.name === "NotAllowedError"
-            setErro(negada ? "Permissão de microfone negada — habilite nas configurações do navegador."
-                : "Não foi possível acessar o microfone.")
-            return
-        }
-        const tipo = tipoAudioSuportado()
-        const rec = tipo ? new MediaRecorder(stream, { mimeType: tipo }) : new MediaRecorder(stream)
-        chunksRef.current = []
-        rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-        rec.onstop = () => {
-            if (gravCronRef.current) { clearInterval(gravCronRef.current); gravCronRef.current = null }
-            stream.getTracks().forEach((t) => t.stop())
-            const blob = new Blob(chunksRef.current, { type: tipo || "audio/webm" })
-            chunksRef.current = []
-            gravadorRef.current = null
-            setGravando(false)
-            if (blob.size > 500) void enviarAudio(blob)  // ignora clique acidental (áudio quase vazio)
-        }
-        gravadorRef.current = rec
-        rec.start()
-        setGravando(true)
-        setGravSeg(0)
-        gravCronRef.current = setInterval(() => setGravSeg((s) => s + 1), 1000)
-    }
+    // [157]: o botão de apertar-e-segurar (mic-grupo) saiu do compositor — o
+    // usuário decidiu que "Modo voz" (mãos-livres) e "Tempo real" já bastam
+    // pra falar com o Tutor IA, então `iniciarGravacao` (que abria um stream
+    // NOVO a cada toque) ficou sem chamador e foi removida. `pararGravacao`
+    // continua — é chamada pelo loop do mãos-livres (`loopEscutaML`) pra
+    // parar a gravação JÁ aberta em `gravadorRef` quando detecta silêncio.
     function pararGravacao() {
         if (gravadorRef.current && gravadorRef.current.state !== "inactive") gravadorRef.current.stop()
     }
@@ -359,6 +504,10 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
     async function ativarMaosLivres() {
         if (maosLivres || ativa == null) return
         setErro(null)
+        // [129]: desbloqueia o áudio AQUI, dentro do clique real que ligou o
+        // modo voz — depois disso o navegador deixa tocar sozinho a cada
+        // turno, porque nenhum turno seguinte tem um clique próprio.
+        await desbloquearAudio(audioRef.current)
         let stream: MediaStream
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -384,12 +533,10 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         ctxMLRef.current = ctx
         analiserMLRef.current = analiser
         bufferMLRef.current = buffer
-        inicioFalaRef.current = null
         inicioSilencioRef.current = null
         pausarEscutaRef.current = false
         maosLivresRef.current = true
         setMaosLivres(true)
-        setVozAberta(false)
 
         const amostras: number[] = []
         const fimCalibragem = performance.now() + 700
@@ -418,7 +565,6 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         ctxMLRef.current = null
         analiserMLRef.current = null
         bufferMLRef.current = null
-        inicioFalaRef.current = null
         inicioSilencioRef.current = null
         gravInicioRef.current = null
         pausarEscutaRef.current = false
@@ -444,15 +590,21 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         if (!stream) return
         const tipo = tipoAudioSuportado()
         const gravador = tipo ? new MediaRecorder(stream, { mimeType: tipo }) : new MediaRecorder(stream)
-        chunksRef.current = []
-        gravador.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+        // [129]: array LOCAL a esta instância — com blips iniciando a
+        // gravação (pra não perder o começo da fala), uma gravação nova pode
+        // começar antes do onstop da anterior disparar; um buffer
+        // compartilhado misturaria os dois áudios.
+        const pedacos: Blob[] = []
+        gravador.ondataavailable = (e) => { if (e.data.size > 0) pedacos.push(e.data) }
         gravador.onstop = () => {
-            const blob = new Blob(chunksRef.current, { type: tipo || "audio/webm" })
-            chunksRef.current = []
-            gravadorRef.current = null
+            const blob = new Blob(pedacos, { type: tipo || "audio/webm" })
             if (gravCronRef.current) { clearInterval(gravCronRef.current); gravCronRef.current = null }
             gravInicioRef.current = null
             setGravando(false)
+            // só limpa a referência se ainda for ESTE gravador — uma gravação
+            // mais nova pode já ter assumido `gravadorRef.current` enquanto
+            // este `onstop` (assíncrono) esperava pra disparar
+            if (gravadorRef.current === gravador) gravadorRef.current = null
             if (blob.size > 500) {
                 pausarEscutaRef.current = true  // não escuta a própria resposta tocando (eco)
                 void enviarAudio(blob)
@@ -469,11 +621,18 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
     }
 
     const MAX_GRAVACAO_ML_MS = 25000
-    const MIN_FALA_MS = 220
     const SILENCIO_PARA_ENVIAR_MS = 1100
 
     /** Loop de detecção de fala (RAF, não setInterval). Roda por minutos:
-     *  NUNCA lê state diretamente, só refs, senão fecharia sobre valor velho. */
+     *  NUNCA lê state diretamente, só refs, senão fecharia sobre valor velho.
+     *
+     *  [129]: grava já no 1º sinal de volume — MediaRecorder não tem como
+     *  capturar áudio de ANTES de start(), então esperar aqui pra "confirmar
+     *  que é fala" cortava o começo da frase. E, uma vez gravando, o único
+     *  critério pra PARAR é silêncio sustentado — sem uma janela de
+     *  confirmação separada, que cortava fala real com uma pausa natural no
+     *  meio. Ruído breve (blip) vira gravação igual, mas termina rápido e
+     *  sai pequena — o onstop de `comecarGravarML` já descarta blob minúsculo. */
     function loopEscutaML() {
         rafMLRef.current = requestAnimationFrame(loopEscutaML)
         const analiser = analiserMLRef.current
@@ -485,15 +644,8 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
 
         if (!gravadorRef.current) {
             if (nivel > limiarMLRef.current) {
-                if (inicioFalaRef.current == null) inicioFalaRef.current = agora
-                if (agora - inicioFalaRef.current >= MIN_FALA_MS) {
-                    inicioFalaRef.current = null
-                    inicioSilencioRef.current = null
-                    setOuvindo(false)
-                    comecarGravarML()
-                }
-            } else {
-                inicioFalaRef.current = null
+                setOuvindo(false)
+                comecarGravarML()
             }
             return
         }
@@ -518,7 +670,7 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
         <div className="chat">
             <aside className="chat-painel">
                 <div className="chat-box" style={{ gridRow: "1 / 3" }}>
-                    <div className="chat-box-cab"><h4>Tutor IA</h4></div>
+                    <div className="chat-box-cab"><h4>Tutor IA</h4> <Feedback ferramenta="tutor_ia" /></div>
                     <div className="chat-box-corpo">
                         <button className="btn-nova-conversa" onClick={() => setNovaAberta((v) => !v)}>
                             {novaAberta ? <>✕ Cancelar</> : <>✎ Nova conversa</>}
@@ -555,12 +707,39 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
                             </div>
                         )}
                         {conversas.map((c) => (
-                            <div key={c.id} className={`chat-conv ${c.id === ativa ? "ativa" : ""}`} onClick={() => abrirConversa(c.id)}>
-                                <span className="chat-conv-titulo">{c.titulo}</span>
-                                <button className="link" title="Apagar conversa" onClick={async (e) => {
-                                    e.stopPropagation()
-                                    if (confirm("Apagar conversa?")) { await api.chatApagar(c.id); if (ativa === c.id) setAtiva(null); await carregarConversas() }
-                                }}>✕</button>
+                            <div key={c.id}>
+                                <div className={`chat-conv ${c.id === ativa ? "ativa" : ""}`} onClick={() => abrirConversa(c.id)}>
+                                    <span className="chat-conv-titulo">{c.titulo}</span>
+                                    {/* [157]: a escolha de RAG saiu de cima do compositor — agora mora
+                                        na edição da própria conversa, aqui na lista, não mais flutuando
+                                        acima de onde o aluno digita. */}
+                                    {c.id === ativa && (
+                                        <button className="link" title="Conhecimento desta conversa (RAG)" onClick={(e) => {
+                                            e.stopPropagation(); setConhecimentoAberto((v) => !v)
+                                        }}>✏️</button>
+                                    )}
+                                    <button className="link" title="Apagar conversa" onClick={async (e) => {
+                                        e.stopPropagation()
+                                        if (confirm("Apagar conversa?")) { await api.chatApagar(c.id); if (ativa === c.id) setAtiva(null); await carregarConversas() }
+                                    }}>✕</button>
+                                </div>
+                                {c.id === ativa && conhecimentoAberto && conversa && (
+                                    <div className="chat-nova" style={{ margin: "2px 0 8px" }}>
+                                        <p className="dica" style={{ margin: "0 0 4px" }}>
+                                            Conhecimento desta conversa (vazio = usa tudo que estiver classificado):
+                                        </p>
+                                        <SeletorLista
+                                            itens={docs.map((d) => ({
+                                                id: d.id, label: d.titulo, titulo: d.descricao, desabilitado: !d.indexado,
+                                                sublabel: !d.indexado
+                                                    ? `🕓 em análise (${d.tentativas_indexacao} tentativa${d.tentativas_indexacao === 1 ? "" : "s"})`
+                                                    : d.enviado_por ? `de ${d.enviado_por}` : undefined,
+                                            }))}
+                                            selecionados={new Set(conversa.rag_doc_ids)} aoAlternar={alternarConhecimentoAtivo}
+                                            vazio='Nenhum documento classificado pra "Tutor IA" ainda.'
+                                        />
+                                    </div>
+                                )}
                             </div>
                         ))}
                         {!conversas.length && !novaAberta && <p className="chat-vazio">Nenhuma conversa ainda.</p>}
@@ -627,9 +806,17 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
                 ) : (
                     <>
                         <div className="chat-msgs">
+                            {/* [164]: marcador do topo — `scrollIntoView` rola SEJA lá qual for
+                                o ancestral que de fato tem scroll (no desktop é `.chat-msgs`; no
+                                mobile é a PÁGINA INTEIRA, porque em modo celular `.chat-thread`
+                                cresce junto com o conteúdo em vez de ficar com altura travada).
+                                `msgsRef.scrollTo()` só funcionava no desktop — no mobile
+                                `.chat-msgs` nunca tinha scroll próprio pra rolar, então o botão
+                                não fazia nada. */}
+                            <div ref={topoRef} />
                             {!msgs.length && (
                                 <div className="chat-abertura">
-                                    <p>Escreva sua dúvida abaixo, ou aperte e segure o microfone pra falar.</p>
+                                    <p>Escreva sua dúvida abaixo, ou use "Modo voz"/"Tempo real" pra falar.</p>
                                 </div>
                             )}
                             {msgs.map((m, i) => (
@@ -638,104 +825,140 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void }) {
                                 </div>
                             ))}
                             {enviando && <div className="chat-msg assistant"><div className="chat-bolha pensando">pensando…</div></div>}
+                            {/* [136]: palavra por palavra na tela, igual assistentes de IA — bolha
+                                "ao vivo" enquanto ainda não finalizou (depois vira mensagem real). */}
+                            {/* [146]: `.trim()` no lugar de truthy puro — um delta que chega só
+                                com espaço (comum no primeiro token do LLM) fazia essa bolha
+                                aparecer visualmente "vazia" (só o formato da bolha, sem texto). */}
+                            {vtrAtivo && vtrTranscricao.trim() && (
+                                <div className="chat-msg user"><div className="chat-bolha">{vtrTranscricao}</div></div>
+                            )}
+                            {vtrAtivo && vtrResposta.trim() && (
+                                <div className="chat-msg assistant"><div className="chat-bolha">{vtrResposta}</div></div>
+                            )}
                             <div ref={fimRef} />
                         </div>
                         {erro && <p className="falha chat-erro">{erro}</p>}
-
-                        <div className="chat-nova" style={{ margin: "0 14px" }}>
-                            <button className="link" onClick={() => setConhecimentoAberto((v) => !v)}>
-                                📚 Conhecimento desta conversa {conversa && conversa.rag_doc_ids.length > 0 ? `(${conversa.rag_doc_ids.length} escolhido(s))` : "(usando tudo classificado)"}
-                                {conhecimentoAberto ? " ▾" : " ▸"}
-                            </button>
-                            {conhecimentoAberto && conversa && (
-                                <SeletorLista
-                                    itens={docs.map((d) => ({
-                                        id: d.id, label: d.titulo, titulo: d.descricao, desabilitado: !d.indexado,
-                                        sublabel: !d.indexado
-                                            ? `🕓 em análise (${d.tentativas_indexacao} tentativa${d.tentativas_indexacao === 1 ? "" : "s"})`
-                                            : d.enviado_por ? `de ${d.enviado_por}` : undefined,
-                                    }))}
-                                    selecionados={new Set(conversa.rag_doc_ids)} aoAlternar={alternarConhecimentoAtivo}
-                                    vazio='Nenhum documento classificado pra "Tutor IA" ainda.'
-                                />
-                            )}
-                        </div>
+                        {audioPendente && (
+                            <button className="btn-ouvir-pendente" onClick={tocarManual}>🔊 Ouvir resposta</button>
+                        )}
 
                         <div className="chat-compositor">
+                            {/* [160]: o usuário achou sem sentido flutuar no canto de cima das
+                                mensagens — pediu explicitamente acima do Enviar, com folga (não
+                                colado). Reaproveita a MESMA técnica do [093] (filho de
+                                `.chat-compositor`, que já é `position:relative`, ancorado por
+                                `bottom:100%`) — já resolveu sobreposição de botão flutuante antes. */}
+                            {/* [163]: par subir/descer — mesmo atalho rápido dos dois lados. */}
+                            {msgs.length > 0 && (
+                                <>
+                                    <button className="btn-topo btn-topo-fim" title="Ir para o final da conversa"
+                                        onClick={() => fimRef.current?.scrollIntoView({ behavior: "smooth" })}>
+                                        <Icone slot="chat.ir_fim" textoPadrao="🔽" />
+                                    </button>
+                                    <button className="btn-topo" title="Ir para o topo da conversa"
+                                        onClick={() => topoRef.current?.scrollIntoView({ behavior: "smooth" })}>
+                                        <Icone slot="chat.ir_topo" textoPadrao="🔼" />
+                                    </button>
+                                </>
+                            )}
                             <div className="chat-caixa">
                                 {maosLivres && (
                                     <p className="maos-livres-tarja">
-                                        🚗 modo carro ligado — {gravando ? `gravando (${gravSeg}s)…` : respondendoVoz ? "processando e respondendo…" : ouvindo ? "ouvindo, fale quando quiser…" : "ativo"}
+                                        Modo voz ligado — {gravando ? `gravando (${gravSeg}s)…` : respondendoVoz ? "processando e respondendo…" : ouvindo ? "ouvindo, fale quando quiser…" : "ativo"}
                                     </p>
                                 )}
-                                <div className="chat-botoes">
-                                    <label className="link" style={{ margin: 0 }}>
-                                        Persona:
-                                        <select value={conversa?.persona ?? "professor"} onChange={(e) => trocarPersona(e.target.value as "professor" | "amigo")} style={{ marginLeft: 4 }}>
-                                            <option value="professor">professor</option>
-                                            <option value="amigo">amigo</option>
-                                        </select>
-                                    </label>
-                                    <span className="chat-espaco" />
-
-                                    {/* [123]: modo carro destacado, ao lado da escolha de IA — antes só
-                                        vivia dentro do popup do microfone (⌄), pouco visível. */}
-                                    <button className={`pill voz-mode ${maosLivres ? "ativo" : ""}`} onClick={alternarMaosLivres}
-                                        title="Modo carro: liga uma vez, fica ouvindo, fala, envia e responde sozinho">
-                                        🚗 Voz mode
-                                    </button>
-
+                                {vtrAtivo && (
+                                    // [146]: só o estado + avisos aqui — a transcrição/resposta ao
+                                    // vivo (bolha "Você:"/"IA:") saiu daqui porque ficava colada em
+                                    // cima da caixa de digitar, dando a impressão errada de estar
+                                    // "escrevendo ali". A única área onde o texto falado aparece
+                                    // agora é o histórico de mensagens, acima (mesmo balão de sempre).
+                                    <div className="maos-livres-tarja" style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                                        <strong>
+                                            🎙️ Tempo real — {vtrEstado === "conectando" ? "conectando…" : vtrEstado === "ouvindo" ? "ouvindo, fale quando quiser…" : vtrEstado === "processando" ? "pensando…" : vtrEstado === "falando" ? "respondendo…" : "encerrado"}
+                                        </strong>
+                                        {vtrAviso && <span className="dica">{vtrAviso}</span>}
+                                        {vtrErro && <span className="falha">{vtrErro}</span>}
+                                    </div>
+                                )}
+                                {/* [157]: textarea livre, sem nenhum botão em cima — o usuário pediu
+                                    pra "deixar onde eu digito texto livre". Os controles (persona,
+                                    modelo, modo voz, tempo real) desceram pra depois do Enviar, em
+                                    ícone só (sem mic-grupo — "Modo voz"/"Tempo real" já bastam). */}
+                                <textarea value={texto} onChange={(e) => setTexto(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); mandar(texto) } }}
+                                    placeholder="Pergunte ao Tutor IA…" rows={2} />
+                                <div className="chat-botoes chat-botoes-baixo">
                                     {conversa && (
                                         <span className="popup-anchor">
-                                            <button className="pill" onClick={() => setCfgAberta((v) => !v)}>
-                                                <span className="pill-modelo">
-                                                    {conversa.modelo_texto_id
-                                                        ? modelos?.texto.find((m) => m.id === conversa.modelo_texto_id)?.nome ?? "IA"
-                                                        : "Padrão do sistema"}
-                                                </span>
-                                                <span className="chevron">⌄</span>
+                                            <button className="pill icone-so" onClick={() => setCfgAberta((v) => !v)}
+                                                title={`IA: ${conversa.modelo_texto_id ? modelos?.texto.find((m) => m.id === conversa.modelo_texto_id)?.nome ?? "IA" : "Padrão do sistema"}`}>
+                                                <Icone slot="compositor.modelo" textoPadrao="IA" />
                                             </button>
                                             {cfgAberta && (
                                                 <>
                                                     <div className="popup-backdrop" onClick={() => setCfgAberta(false)} />
-                                                    <PopupIA conversa={conversa} modelos={modelos} onTrocarModelo={trocarModelo} mostrarModoConversa={false} />
+                                                    <PopupIA conversa={conversa} modelos={modelos} vozes={vozes} onTrocarModelo={trocarModelo} onTrocarVoz={trocarVoz} mostrarModoConversa={false} />
                                                 </>
                                             )}
                                         </span>
                                     )}
 
-                                    <span className={`mic-grupo ${maosLivres ? "maos-livres-ativo" : ""}`}>
-                                        <button
-                                            className={`icone-mic-rec ${gravando ? "gravando" : ""}`}
-                                            disabled={respondendoVoz || maosLivres || mic?.count === 0}
-                                            title={mic?.count === 0 ? "Nenhum microfone detectado" : maosLivres ? "Desligue o modo carro pra gravar assim" : gravando ? "Solte para enviar" : "Segure para gravar sua pergunta"}
-                                            onPointerDown={(e) => { e.preventDefault(); void iniciarGravacao() }}
-                                            onPointerUp={pararGravacao}
-                                            onPointerLeave={() => { if (gravando) pararGravacao() }}
-                                            onPointerCancel={() => { if (gravando) pararGravacao() }}
-                                        >
-                                            {maosLivres
-                                                ? (gravando ? `⏹ ${gravSeg}s` : respondendoVoz ? "🎧…" : ouvindo ? "🎙️ ouvindo" : "🚗")
-                                                : (respondendoVoz ? "…" : gravando ? `⏹ ${gravSeg}s` : "🎤")}
+                                    <span className="popup-anchor">
+                                        <button className="pill icone-so" onClick={() => setPersonaAberta((v) => !v)}
+                                            title={`Persona: ${conversa?.persona ?? "professor"}`}>
+                                            <Icone slot="compositor.persona" textoPadrao="Persona" />
                                         </button>
-                                        <span className="popup-anchor">
-                                            <button className="icone-mic-chevron" onClick={abrirPopupVoz} title="Voz e microfone">
-                                                <span className="chevron">⌄</span>
-                                            </button>
-                                            {vozAberta && (
-                                                <>
-                                                    <div className="popup-backdrop" onClick={() => setVozAberta(false)} />
-                                                    <PopupVoz mic={mic} onVerificar={async () => setMic(await checarMicrofone(true))}
-                                                        maosLivres={maosLivres} onAlternarMaosLivres={alternarMaosLivres} />
-                                                </>
-                                            )}
-                                        </span>
+                                        {personaAberta && (
+                                            <>
+                                                <div className="popup-backdrop" onClick={() => setPersonaAberta(false)} />
+                                                {/* [157]: popup, não mais <select> — o usuário vai adicionar mais
+                                                    personas no futuro (modo de edição de prompt/agente), então
+                                                    isto precisa escalar como uma lista, igual ao seletor de IA. */}
+                                                <Popup align="direita">
+                                                    <div className="popup-secao">
+                                                        <p className="popup-titulo">Persona</p>
+                                                        <button className={`popup-linha ${(conversa?.persona ?? "professor") === "professor" ? "sel" : ""}`}
+                                                            onClick={() => { void trocarPersona("professor"); setPersonaAberta(false) }}>
+                                                            <span>Professor</span>{(conversa?.persona ?? "professor") === "professor" && <span className="check">✓</span>}
+                                                        </button>
+                                                        <button className={`popup-linha ${conversa?.persona === "amigo" ? "sel" : ""}`}
+                                                            onClick={() => { void trocarPersona("amigo"); setPersonaAberta(false) }}>
+                                                            <span>Amigo</span>{conversa?.persona === "amigo" && <span className="check">✓</span>}
+                                                        </button>
+                                                    </div>
+                                                </Popup>
+                                            </>
+                                        )}
                                     </span>
+
+                                    {/* [123]: destacado — antes só vivia dentro do popup do microfone (⌄),
+                                        pouco visível; [157]: ícone só, sem o mic-grupo do lado. */}
+                                    <button className={`pill voz-mode icone-so ${maosLivres ? "ativo" : ""}`} onClick={alternarMaosLivres}
+                                        title="Modo voz: liga uma vez, fica ouvindo, fala, envia e responde sozinho">
+                                        <Icone slot="compositor.modo_voz" textoPadrao="Modo voz" />
+                                    </button>
+
+                                    <span className="chat-espaco" />
+
+                                    {/* [159]: à direita, colado no Enviar, e maior que os outros 3 — o
+                                        usuário decidiu que "Tempo real" é o mais importante do grupo.
+                                        [135]/[142]: conversa por voz em TEMPO REAL — experimental, em
+                                        qualquer dispositivo. Módulo isolado (vozTempoReal.ts), não usa
+                                        MediaRecorder nem o pipeline de cima ("Modo voz"/aperta-e-
+                                        segura/mãos-livres, separado por `modo` em tocarResposta());
+                                        STT/LLM/TTS em streaming por um WebSocket próprio. */}
+                                    {conversa && (
+                                        <button className={`pill voz-mode icone-so icone-destaque ${vtrAtivo ? "ativo" : ""}`} onClick={alternarVozTempoReal}
+                                            title="Conversa por voz em tempo real (experimental) — fala e ouve em streaming, sem esperar gravação terminar">
+                                            <Icone slot="compositor.tempo_real" textoPadrao="Tempo real" />
+                                        </button>
+                                    )}
+                                    <button className="btn-enviar" disabled={enviando || !texto.trim()} onClick={() => mandar(texto)} title="Enviar">
+                                        <Icone slot="compositor.enviar" textoPadrao="Enviar ▸" />
+                                    </button>
                                 </div>
-                                <textarea value={texto} onChange={(e) => setTexto(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); mandar(texto) } }}
-                                    placeholder="Pergunte ao Tutor IA…" rows={2} />
-                                <button disabled={enviando || !texto.trim()} onClick={() => mandar(texto)}>Enviar ▸</button>
                             </div>
                         </div>
                         <audio ref={audioRef} hidden />
