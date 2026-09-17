@@ -1,12 +1,15 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.v1.router import api_router
+from app.api.ws_voz import router as ws_voz_router
 from app.core.config import get_settings
 from app.core.monitor import loop_monitor
+from app.modules.ai_registry.fila import FilaEsgotada
 
 settings = get_settings()
 
@@ -41,3 +44,14 @@ app.add_middleware(
 # ser usado por outro site.
 
 app.include_router(api_router)
+# [135]: fora do prefixo /api/v1 de propósito — casa com a reserva
+# `location /ws/` que já existe no nginx desde o [011] (upgrade de conexão).
+app.include_router(ws_voz_router)
+
+
+# [126]: fila de admissão para chamadas de IA — qualquer rota que acabe
+# esgotando o tempo de espera vira 503 aqui, sem precisar de `except` em
+# cada uma das dezenas de rotas que chamam IA (chat/questoes/tutor...).
+@app.exception_handler(FilaEsgotada)
+async def _fila_esgotada_handler(_: Request, exc: FilaEsgotada) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)})

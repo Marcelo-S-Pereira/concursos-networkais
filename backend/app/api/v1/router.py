@@ -10,7 +10,9 @@ from app.api.v1 import (
     desempenho,
     edital,
     estatisticas,
+    feedback,
     health,
+    icones,
     pagamentos,
     prompts,
     questoes,
@@ -39,3 +41,5 @@ api_router.include_router(creditos.router, tags=["creditos"])
 api_router.include_router(chat.router, tags=["chat"])
 api_router.include_router(tutor.router, tags=["tutor"])
 api_router.include_router(prompts.router, tags=["prompts"])
+api_router.include_router(icones.router, tags=["icones"])
+api_router.include_router(feedback.router, tags=["feedback"])

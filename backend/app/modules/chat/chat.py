@@ -8,12 +8,24 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ChatMessage, Conversation, Exam, Question, RagDocument
+from app.db.models import ChatAnswer, ChatMessage, Conversation, Exam, Question, RagDocument
 from app.modules.ai_registry import servico
+from app.modules.desempenho.revisao import agendar_erro
 from app.modules.prompts import prompts
 from app.modules.rag.rag import contexto_biblioteca
 
 FIGURAS_DIR = Path(__file__).resolve().parents[3].parent / "uploads" / "figuras"
+# [133]: entrega por URL real (uploads/audio_chat/ + GET /chat/audio/{nome})
+# foi REVERTIDA — achado real em produção: a Cloudflare (proxy laranja do
+# domínio) cacheava a resposta por ter extensão .mp3 e `Cache-Control:
+# max-age`, e o cache dela NÃO respeita cookie de sessão por padrão — uma
+# requisição SEM cookie nenhum recebeu `cf-cache-status: HIT` e os MESMOS
+# bytes de áudio de uma conversa privada. Ou seja, o `Depends(usuario_atual)`
+# da rota nunca chegava a rodar pra quem pegasse a URL depois do 1º acesso —
+# vazamento real de conteúdo de conversa. Voltou pra `audio_b64` (o que já
+# funcionava no celular) até esse problema de cache ser resolvido de verdade
+# (ex.: `Cache-Control: private, no-store` na resposta, e mesmo assim raciocinar
+# se a CDN reconhece esse header pra rotas autenticadas).
 
 # [125]: o texto dos prompts abaixo (chat_sistema/chat_sistema_tutor/
 # chat_persona_professor/chat_persona_amigo) mora na tabela `prompts`, não
@@ -119,6 +131,29 @@ def _contexto_caderno(
     return "\n".join(linhas)
 
 
+def _persistir_resposta_chat(db: Session, conversa: Conversation, exam_id: int, numero: int, letra: str) -> None:
+    """[153]: resposta real dada no Chat vira `ChatAnswer` estruturada — até
+    aqui só existia como texto solto em `ChatMessage`, e por isso nunca
+    entrava em Mastery/Dificuldade/Revisão (só `SimulationAnswer` entrava).
+    Errar aqui agenda a questão pra revisão, com origem="chat" — mesmo
+    caminho que o simulado já usa ([045]), só com o rótulo certo. Best-effort
+    de propósito: sem a questão cadastrada (caderno apagado etc.), não trava
+    a resposta do chat por causa de estatística."""
+    q = db.execute(
+        select(Question).where(Question.exam_id == exam_id, Question.numero == numero)
+    ).scalar_one_or_none()
+    if not q:
+        return
+    correta = letra.upper() == (q.gabarito or "").upper()
+    db.add(ChatAnswer(
+        user_id=conversa.user_id, conversation_id=conversa.id, question_id=q.id,
+        letra=letra.upper(), correta=correta,
+    ))
+    if not correta:
+        agendar_erro(db, conversa.user_id, q.id, origem="chat")
+    db.commit()
+
+
 def _figura_b64(db: Session, question_id: int | None) -> str | None:
     if not question_id:
         return None
@@ -132,7 +167,7 @@ def _figura_b64(db: Session, question_id: int | None) -> str | None:
 
 
 def responder(db: Session, conversa: Conversation, texto_usuario: str,
-              question_id: int | None = None, imagem_b64: str | None = None) -> str:
+              question_id: int | None = None, imagem_b64: str | None = None, falado: bool = False) -> str:
     exam_ids = _exam_ids_efetivos(conversa)
     # a resposta DESTA mensagem ainda não está no histórico (só é persistida depois que
     # responder() retorna) — mescla aqui para o próprio turno em que o aluno responde já
@@ -142,7 +177,13 @@ def responder(db: Session, conversa: Conversation, texto_usuario: str,
     if m:
         eid = _resolver_exam_id(m.group(1), exam_ids)
         if eid is not None:
-            respondidas[(eid, int(m.group(2)))] = m.group(3).upper()
+            numero = int(m.group(2))
+            letra = m.group(3).upper()
+            respondidas[(eid, numero)] = letra
+            # [153]: persiste como ChatAnswer só na 1ª vez que esta resposta é
+            # processada — chega aqui exatamente 1 vez por turno real (nunca
+            # via a varredura de histórico acima, que é só leitura).
+            _persistir_resposta_chat(db, conversa, eid, numero, letra)
 
     # [109]: modo "tutor" (aba Tutor IA) é especialista geral, grounded na
     # biblioteca uso=tutor — sem caderno de questões oficial. Modo "chat"
@@ -167,6 +208,12 @@ def responder(db: Session, conversa: Conversation, texto_usuario: str,
     # [108]: motor de biblioteca — best-effort, "" quando não há nada relevante.
     if biblioteca:
         sistema += "\n\n" + biblioteca
+    # [132]: quando a resposta vai ser falada (TTS), o LLM precisa saber disso
+    # — sem isto ele nega ter "ouvido" a pergunta (que já chegou transcrita) e
+    # nega poder "falar" a resposta, mesmo ambas as coisas acontecendo de
+    # verdade fora do alcance dele.
+    if falado:
+        sistema += "\n\n" + prompts.buscar(db, "chat_modo_voz_addendum")
     historico = [
         {"role": m.role, "content": m.conteudo}
         for m in db.execute(
@@ -203,9 +250,14 @@ def transcrever_pergunta(db: Session, conversa: Conversation, audio_bytes: bytes
 def responder_e_falar(db: Session, conversa: Conversation, texto_usuario: str,
                       question_id: int | None = None) -> dict:
     """Responde pelo MESMO pipeline de texto (mesmo gate de gabarito, mesmo
-    ramo de visão quando a questão tem figura) e fala a resposta (TTS)."""
-    resposta = responder(db, conversa, texto_usuario, question_id)
+    ramo de visão quando a questão tem figura) e fala a resposta (TTS).
+
+    `falado=True` avisa o LLM que esta resposta vai ser falada (ver
+    `chat_modo_voz_addendum`, [133]). `audio_b64` — [133] tentou trocar por
+    URL servida e revertou por achado de vazamento via cache da CDN."""
+    resposta = responder(db, conversa, texto_usuario, question_id, falado=True)
     audio_resposta = servico.falar_texto(
         db, resposta, origem="chat_tts", user_id=conversa.user_id, connection_id=conversa.modelo_voz_id,
+        voz=conversa.voz_escolhida,  # [151]: voz do Kokoro escolhida pelo aluno; None = padrão
     )
     return {"resposta": resposta, "audio_b64": base64.b64encode(audio_resposta).decode()}

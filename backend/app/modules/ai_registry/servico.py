@@ -9,7 +9,7 @@ import time
 
 from sqlalchemy.orm import Session
 
-from app.modules.ai_registry import cliente
+from app.modules.ai_registry import cliente, fila
 from app.modules.ai_registry.cliente import AiCallError, chamar_chat, chamar_embeddings
 from app.modules.ai_registry.resolver import cadeia_para_categoria
 from app.modules.ai_registry.uso import registrar
@@ -58,22 +58,23 @@ def conversar(db: Session, categoria: str, mensagens: list[dict], *, origem: str
     if not cadeia:
         raise SemConexaoIA(f"Nenhuma conexão de IA ativa para a categoria '{categoria}'. Cadastre uma.")
 
-    ultimo_erro: Exception | None = None
-    for conn in cadeia:
-        inicio = time.monotonic()
-        try:
-            conteudo, usage = chamar_chat(conn, mensagens, max_tokens=max_tokens)
-            registrar(db, connection_id=conn.id, categoria=categoria, origem=origem, modelo=conn.modelo,
-                      sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000), usage=usage,
-                      user_id=user_id)
-            return conteudo
-        except AiCallError as e:
-            registrar(db, connection_id=conn.id, categoria=categoria, origem=origem, modelo=conn.modelo,
-                      sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), usage=e.usage,
-                      erro=str(e), user_id=user_id)
-            ultimo_erro = e  # tenta a próxima da cadeia de fallback, se houver
+    with fila.vaga(db):
+        ultimo_erro: Exception | None = None
+        for conn in cadeia:
+            inicio = time.monotonic()
+            try:
+                conteudo, usage = chamar_chat(conn, mensagens, max_tokens=max_tokens)
+                registrar(db, connection_id=conn.id, categoria=categoria, origem=origem, modelo=conn.modelo,
+                          sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000), usage=usage,
+                          user_id=user_id)
+                return conteudo
+            except AiCallError as e:
+                registrar(db, connection_id=conn.id, categoria=categoria, origem=origem, modelo=conn.modelo,
+                          sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), usage=e.usage,
+                          erro=str(e), user_id=user_id)
+                ultimo_erro = e  # tenta a próxima da cadeia de fallback, se houver
 
-    raise ultimo_erro or SemConexaoIA(f"Todas as conexões de '{categoria}' falharam.")
+        raise ultimo_erro or SemConexaoIA(f"Todas as conexões de '{categoria}' falharam.")
 
 
 # Voz padrão por modelo, quando o chamador não escolhe uma — chave em minúsculo
@@ -93,22 +94,23 @@ def transcrever_audio(db: Session, audio_bytes: bytes, nome_arquivo: str, *, ori
     if not cadeia:
         raise SemConexaoIA("Nenhuma conexão de IA ativa para 'transcricao'. Cadastre uma.")
 
-    ultimo_erro: Exception | None = None
-    for conn in cadeia:
-        inicio = time.monotonic()
-        try:
-            resultado = cliente.transcrever(conn, audio_bytes, nome_arquivo, idioma=idioma)
-            registrar(db, connection_id=conn.id, categoria="transcricao", origem=origem, modelo=conn.modelo,
-                      sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000),
-                      unidades=int(resultado["duracao_s"]) or None, tipo_unidade="segundos", user_id=user_id)
-            return resultado
-        except AiCallError as e:
-            registrar(db, connection_id=conn.id, categoria="transcricao", origem=origem, modelo=conn.modelo,
-                      sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),
-                      user_id=user_id)
-            ultimo_erro = e
+    with fila.vaga(db):
+        ultimo_erro: Exception | None = None
+        for conn in cadeia:
+            inicio = time.monotonic()
+            try:
+                resultado = cliente.transcrever(conn, audio_bytes, nome_arquivo, idioma=idioma)
+                registrar(db, connection_id=conn.id, categoria="transcricao", origem=origem, modelo=conn.modelo,
+                          sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000),
+                          unidades=int(resultado["duracao_s"]) or None, tipo_unidade="segundos", user_id=user_id)
+                return resultado
+            except AiCallError as e:
+                registrar(db, connection_id=conn.id, categoria="transcricao", origem=origem, modelo=conn.modelo,
+                          sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),
+                          user_id=user_id)
+                ultimo_erro = e
 
-    raise ultimo_erro or SemConexaoIA("Todas as conexões de 'transcricao' falharam.")
+        raise ultimo_erro or SemConexaoIA("Todas as conexões de 'transcricao' falharam.")
 
 
 def falar_texto(db: Session, texto: str, *, origem: str, user_id: int | None = None,
@@ -119,23 +121,24 @@ def falar_texto(db: Session, texto: str, *, origem: str, user_id: int | None = N
     if not cadeia:
         raise SemConexaoIA("Nenhuma conexão de IA ativa para 'voz'. Cadastre uma.")
 
-    ultimo_erro: Exception | None = None
-    for conn in cadeia:
-        v = voz or VOZES_PADRAO.get((conn.modelo or "").lower(), "alloy")
-        inicio = time.monotonic()
-        try:
-            audio = cliente.falar(conn, texto, v)
-            registrar(db, connection_id=conn.id, categoria="voz", origem=origem, modelo=conn.modelo,
-                      sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000),
-                      unidades=len(texto), tipo_unidade="caracteres", user_id=user_id)
-            return audio
-        except AiCallError as e:
-            registrar(db, connection_id=conn.id, categoria="voz", origem=origem, modelo=conn.modelo,
-                      sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),
-                      user_id=user_id)
-            ultimo_erro = e
+    with fila.vaga(db):
+        ultimo_erro: Exception | None = None
+        for conn in cadeia:
+            v = voz or VOZES_PADRAO.get((conn.modelo or "").lower(), "alloy")
+            inicio = time.monotonic()
+            try:
+                audio = cliente.falar(conn, texto, v)
+                registrar(db, connection_id=conn.id, categoria="voz", origem=origem, modelo=conn.modelo,
+                          sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000),
+                          unidades=len(texto), tipo_unidade="caracteres", user_id=user_id)
+                return audio
+            except AiCallError as e:
+                registrar(db, connection_id=conn.id, categoria="voz", origem=origem, modelo=conn.modelo,
+                          sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),
+                          user_id=user_id)
+                ultimo_erro = e
 
-    raise ultimo_erro or SemConexaoIA("Todas as conexões de 'voz' falharam.")
+        raise ultimo_erro or SemConexaoIA("Todas as conexões de 'voz' falharam.")
 
 
 def gerar_embeddings(db: Session, textos: list[str], *, origem: str, user_id: int | None = None) -> list[list[float]]:
@@ -143,18 +146,19 @@ def gerar_embeddings(db: Session, textos: list[str], *, origem: str, user_id: in
     cadeia = cadeia_para_categoria(db, "embeddings")
     if not cadeia:
         raise SemConexaoIA("Nenhuma conexão de IA ativa para 'embeddings'.")
-    ultimo_erro: Exception | None = None
-    for conn in cadeia:
-        inicio = time.monotonic()
-        try:
-            vetores, usage = chamar_embeddings(conn, textos)
-            registrar(db, connection_id=conn.id, categoria="embeddings", origem=origem, modelo=conn.modelo,
-                      sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000), usage=usage,
-                      user_id=user_id)
-            return vetores
-        except AiCallError as e:
-            registrar(db, connection_id=conn.id, categoria="embeddings", origem=origem, modelo=conn.modelo,
-                      sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),
-                      user_id=user_id)
-            ultimo_erro = e
-    raise ultimo_erro or SemConexaoIA("Todas as conexões de 'embeddings' falharam.")
+    with fila.vaga(db):
+        ultimo_erro: Exception | None = None
+        for conn in cadeia:
+            inicio = time.monotonic()
+            try:
+                vetores, usage = chamar_embeddings(conn, textos)
+                registrar(db, connection_id=conn.id, categoria="embeddings", origem=origem, modelo=conn.modelo,
+                          sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000), usage=usage,
+                          user_id=user_id)
+                return vetores
+            except AiCallError as e:
+                registrar(db, connection_id=conn.id, categoria="embeddings", origem=origem, modelo=conn.modelo,
+                          sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),
+                          user_id=user_id)
+                ultimo_erro = e
+        raise ultimo_erro or SemConexaoIA("Todas as conexões de 'embeddings' falharam.")

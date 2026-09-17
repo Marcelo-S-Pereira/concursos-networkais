@@ -16,19 +16,30 @@ from app.modules.desempenho.revisao import responder_revisao
 router = APIRouter(prefix="/revisao")
 
 
-@router.get("", response_model=list[QuestaoOut])
+class QuestaoRevisaoOut(QuestaoOut):
+    # [153]: "simulado" ou "chat" — de onde veio o erro que pôs esta questão
+    # na fila, pro aluno saber se foi engano no Simulado ou no Chat de estudo.
+    origem: str = "simulado"
+
+
+@router.get("", response_model=list[QuestaoRevisaoOut])
 def devidas(user: User = Depends(usuario_atual), db: Session = Depends(get_db)):
     """Questões cuja revisão vence hoje (ou já venceu)."""
     agora = datetime.now(UTC)
-    ids = db.execute(
-        select(ReviewSchedule.question_id).where(
+    origens = dict(db.execute(
+        select(ReviewSchedule.question_id, ReviewSchedule.origem).where(
             ReviewSchedule.user_id == user.id, ReviewSchedule.vence_em <= agora
         )
-    ).scalars().all()
-    if not ids:
+    ).all())
+    if not origens:
         return []
-    questoes = db.execute(select(Question).where(Question.id.in_(ids), ~Question.descartada)).scalars()
-    return [_para_saida(q) for q in questoes]
+    questoes = db.execute(
+        select(Question).where(Question.id.in_(origens.keys()), ~Question.descartada)
+    ).scalars()
+    return [
+        QuestaoRevisaoOut(**_para_saida(q).model_dump(), origem=origens.get(q.id, "simulado"))
+        for q in questoes
+    ]
 
 
 class RespostaIn(BaseModel):

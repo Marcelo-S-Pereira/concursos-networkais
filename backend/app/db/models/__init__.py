@@ -1,12 +1,15 @@
 from app.db.models.ai import AiCallLog, AiConnection, AiPlatform
 from app.db.models.catalogo import CatalogModel, CatalogPlatform
-from app.db.models.chat import ChatMessage, Conversation
+from app.db.models.chat import ChatAnswer, ChatMessage, Conversation
 from app.db.models.config import SystemSetting
 from app.db.models.credito import CreditTransaction
 from app.db.models.edital import ExamRules
 from app.db.models.estatistica import EmphasisPublicStat
 from app.db.models.feature import FeatureGrant, ResourceUsageLog
+from app.db.models.feedback import Feedback
+from app.db.models.fila import FilaHistorico
 from app.db.models.gemea import TwinQuestion
+from app.db.models.icone import ComponentIcon
 from app.db.models.pagamento import PaymentPlatform
 from app.db.models.prompt import Prompt
 from app.db.models.questao import Choice, Exam, Question
@@ -24,14 +27,18 @@ __all__ = [
     "AiPlatform",
     "CatalogModel",
     "CatalogPlatform",
+    "ChatAnswer",
     "ChatMessage",
     "Choice",
+    "ComponentIcon",
     "Conversation",
     "CreditTransaction",
     "EmphasisPublicStat",
     "Exam",
     "ExamRules",
+    "Feedback",
     "FeatureGrant",
+    "FilaHistorico",
     "LlmTeachingOutput",
     "LoginCode",
     "PaymentPlatform",

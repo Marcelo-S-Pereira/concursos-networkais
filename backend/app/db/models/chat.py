@@ -41,6 +41,10 @@ class Conversation(Base):
     modelo_voz_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     modelo_transcricao_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     modo_voz: Mapped[bool] = mapped_column(Boolean, default=False)
+    # [151]: id da voz Kokoro (pf_dora/pm_alex/pm_santa, [095]) escolhida pelo
+    # aluno. None = usa o padrão (VOZES_PADRAO). Vale pro "Modo voz" (REST) e
+    # pro "Tempo real" (WebSocket, [136]) — os dois falam pela mesma conversa.
+    voz_escolhida: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
@@ -63,3 +67,22 @@ class ChatMessage(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversa: Mapped[Conversation] = relationship(back_populates="mensagens")
+
+
+class ChatAnswer(Base):
+    """[153]: resposta REAL dada a uma questão dentro do Chat de estudos —
+    até aqui isso só existia como texto solto em `ChatMessage`
+    ("Minha resposta da Q{n}: {letra}", [087]), nunca estruturado, e por isso
+    nunca entrava em Mastery/Dificuldade/Revisão (só `SimulationAnswer`
+    entrava). Persistida por `chat.py::responder()`, no mesmo ponto que já
+    resolve a questão/gabarito pra revelar a resposta no turno."""
+
+    __tablename__ = "chat_answers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    question_id: Mapped[int] = mapped_column(ForeignKey("questions.id", ondelete="CASCADE"), index=True)
+    letra: Mapped[str] = mapped_column(String(1))
+    correta: Mapped[bool] = mapped_column(default=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

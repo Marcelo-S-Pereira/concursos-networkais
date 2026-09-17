@@ -178,7 +178,7 @@ def test_rota_audio_ponta_a_ponta(conexoes_voz, monkeypatch):
         assert r.status_code == 200, r.text
         corpo = r.json()
         assert corpo["transcricao"] == "o que é energia cinética?"
-        assert corpo["audio_b64"]  # veio algum áudio de resposta em base64
+        assert corpo["audio_b64"]  # [133]: URL foi revertida (vazamento via cache CDN) — de volta ao base64
 
         # persistiu as duas mensagens (user com a transcrição, assistant com a resposta)
         salvas = db.query(ChatMessage).filter(ChatMessage.conversation_id == cid).order_by(ChatMessage.id).all()

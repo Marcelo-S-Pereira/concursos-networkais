@@ -110,7 +110,7 @@ def test_rota_mensagem_falada_ponta_a_ponta(monkeypatch):
         assert r.status_code == 200, r.text
         corpo = r.json()
         assert corpo["resposta"] == "Uma variável guarda um valor na memória."
-        assert corpo["audio_b64"]  # o texto digitado TAMBÉM veio falado
+        assert corpo["audio_b64"]  # [133]: URL foi revertida (vazamento via cache CDN) — de volta ao base64
 
         salvas = db.query(ChatMessage).filter(ChatMessage.conversation_id == cid).order_by(ChatMessage.id).all()
         assert len(salvas) == 2

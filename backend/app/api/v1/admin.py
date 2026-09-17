@@ -71,6 +71,55 @@ def salvar_limites(dados: LimitesIn, _: User = Depends(apenas_superadmin), db: S
     return limites_configurados(db)
 
 
+@router.get("/fila")
+def fila_estado(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """[126]: config + retrato ao vivo (em voo/esperando/CPU/memória/disco)."""
+    from app.modules.ai_registry.fila import estado
+    return estado(db)
+
+
+class FilaIn(BaseModel):
+    max_concorrente: int
+    cpu_pct_max: float
+    mem_pct_max: float
+    disco_pct_max: float
+    timeout_espera_s: float
+
+
+@router.post("/fila")
+def salvar_fila(dados: FilaIn, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    from app.modules.ai_registry.fila import estado, salvar_config
+    salvar_config(
+        db, max_concorrente=dados.max_concorrente, cpu_pct_max=dados.cpu_pct_max,
+        mem_pct_max=dados.mem_pct_max, disco_pct_max=dados.disco_pct_max,
+        timeout_espera_s=dados.timeout_espera_s,
+    )
+    return estado(db)
+
+
+@router.get("/fila/historico")
+def fila_historico(dias: int = 7, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """[126]: amostras persistidas (a cada 3 min, pelo monitor de fundo) —
+    para decidir quando escalar a partir de tendência, não só do instante."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import FilaHistorico
+
+    desde = datetime.now(UTC) - timedelta(days=max(1, min(dias, 90)))
+    linhas = db.execute(
+        select(FilaHistorico).where(FilaHistorico.criado_em >= desde).order_by(FilaHistorico.criado_em)
+    ).scalars().all()
+    return [
+        {
+            "quando": r.criado_em.isoformat(), "cpu_pct": r.cpu_pct, "memoria_pct": r.memoria_pct,
+            "disco_pct": r.disco_pct, "em_voo": r.em_voo, "esperando": r.esperando,
+            "max_concorrente": r.max_concorrente, "admitidas": r.admitidas, "rejeitadas": r.rejeitadas,
+            "espera_media_ms": r.espera_media_ms,
+        }
+        for r in linhas
+    ]
+
+
 @router.get("/youtube")
 def youtube_config(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     """Estado da chave da YouTube Data API — nunca em claro, só mascarada."""

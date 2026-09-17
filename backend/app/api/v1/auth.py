@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import usuario_atual
@@ -88,9 +88,34 @@ def _para_saida(u: User) -> UsuarioOut:
     )
 
 
+class BetaStatusOut(BaseModel):
+    vagas_total: int
+    vagas_usadas: int
+    vagas_restantes: int
+
+
+@router.get("/beta", response_model=BetaStatusOut)
+def beta_status(db: Session = Depends(get_db)):
+    """[153]: público (a landing page mostra isto pra quem ainda não tem
+    conta) — quantas das vagas do BETA 1 já foram usadas."""
+    from app.core.flags import BETA_VAGAS_TOTAL, BETA_VAGAS_TOTAL_PADRAO, get_flag
+
+    total = int(get_flag(db, BETA_VAGAS_TOTAL, str(BETA_VAGAS_TOTAL_PADRAO)))
+    usadas = db.execute(select(func.count()).select_from(User).where(User.role == "aluno")).scalar_one()
+    return BetaStatusOut(vagas_total=total, vagas_usadas=min(usadas, total), vagas_restantes=max(0, total - usadas))
+
+
 @router.post("/cadastro", status_code=status.HTTP_201_CREATED)
 def cadastrar(dados: CadastroIn, db: Session = Depends(get_db)) -> dict:
-    from app.core.flags import cadastros_bloqueados
+    from app.core.flags import (
+        BETA_CREDITOS_BONUS,
+        BETA_CREDITOS_BONUS_PADRAO,
+        BETA_VAGAS_TOTAL,
+        BETA_VAGAS_TOTAL_PADRAO,
+        cadastros_bloqueados,
+        get_flag,
+    )
+    from app.modules.creditos import carteira
 
     # protege a ambiente de execucao: quando o admin bloqueia (ou o monitor auto-bloqueia em carga
     # crítica), novos cadastros são recusados. O dono já existe, não é afetado.
@@ -124,17 +149,31 @@ def cadastrar(dados: CadastroIn, db: Session = Depends(get_db)) -> dict:
     # O primeiro cadastro do sistema é o dono.
     primeiro = db.execute(select(User.id).limit(1)).scalar_one_or_none() is None
 
-    db.add(
-        User(
-            nome=dados.nome.strip(),
-            email=email,
-            cpf_cifrado=cifrar(cpf),
-            cpf_indice=indice,
-            telefone=telefone,
-            role="superadmin" if primeiro else "aluno",
-        )
+    # [153]: BETA 1 — conta quantos alunos JÁ existem (o dono nunca entra
+    # nessa conta) antes de inserir este; se ainda houver vaga, o novo
+    # usuário ganha o crédito do mês automaticamente, sem ação do admin.
+    n_alunos_antes = db.execute(select(func.count()).select_from(User).where(User.role == "aluno")).scalar_one()
+    vagas_beta = int(get_flag(db, BETA_VAGAS_TOTAL, str(BETA_VAGAS_TOTAL_PADRAO)))
+    ganha_bonus_beta = (not primeiro) and n_alunos_antes < vagas_beta
+
+    novo = User(
+        nome=dados.nome.strip(),
+        email=email,
+        cpf_cifrado=cifrar(cpf),
+        cpf_indice=indice,
+        telefone=telefone,
+        role="superadmin" if primeiro else "aluno",
     )
+    db.add(novo)
     db.commit()
+
+    if ganha_bonus_beta:
+        db.refresh(novo)
+        creditos_bonus = int(get_flag(db, BETA_CREDITOS_BONUS, str(BETA_CREDITOS_BONUS_PADRAO)))
+        carteira.creditar(
+            db, novo.id, creditos_bonus, tipo="bonus",
+            descricao=f"BETA 1 — {vagas_beta} primeiros usuários (crédito do mês automático)",
+        )
     return {"mensagem": "Cadastro realizado. Agora entre com o código enviado ao seu e-mail."}
 
 

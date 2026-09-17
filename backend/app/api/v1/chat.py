@@ -35,6 +35,14 @@ def _isento(user: User) -> bool:
 MODOS_CONVERSA = ("chat", "tutor")  # [109]: "chat" = tutor do caderno; "tutor" = especialista geral (aba Tutor IA)
 PERSONAS = ("professor", "amigo")
 MODOS_QUESTAO = ("normal", "random")  # [115]: normal = aluno escolhe; random = backend sorteia
+# [151]: as únicas 3 vozes de português do Kokoro-82M confirmadas na fonte
+# primária (VOICES.md do modelo no Hugging Face, [095]) — não expõe vozes de
+# outro idioma pra não confundir o aluno, nem inventa nenhuma além destas.
+VOZES_KOKORO = {
+    "pf_dora": "Dora (feminina)",
+    "pm_alex": "Alex (masculina)",
+    "pm_santa": "Santa (masculina)",
+}
 
 
 class NovaConversaIn(BaseModel):
@@ -50,6 +58,7 @@ class NovaConversaIn(BaseModel):
     modelo_voz_id: int | None = None
     modelo_transcricao_id: int | None = None
     modo_voz: bool = False
+    voz_escolhida: str | None = None
 
 
 class ConversaOut(BaseModel):
@@ -66,6 +75,7 @@ class ConversaOut(BaseModel):
     modelo_voz_id: int | None = None
     modelo_transcricao_id: int | None = None
     modo_voz: bool = False
+    voz_escolhida: str | None = None
 
 
 def _saida(c: Conversation) -> ConversaOut:
@@ -75,7 +85,7 @@ def _saida(c: Conversation) -> ConversaOut:
         rag_doc_ids=list(c.rag_doc_ids or []),
         modelo_texto_id=c.modelo_texto_id, modelo_visao_id=c.modelo_visao_id,
         modelo_voz_id=c.modelo_voz_id, modelo_transcricao_id=c.modelo_transcricao_id,
-        modo_voz=c.modo_voz,
+        modo_voz=c.modo_voz, voz_escolhida=c.voz_escolhida,
     )
 
 
@@ -124,6 +134,15 @@ def modelos_disponiveis(_: User = Depends(usuario_atual), db: Session = Depends(
     return saida
 
 
+@router.get("/vozes")
+def vozes_disponiveis(_: User = Depends(usuario_atual)):
+    """[151]: catálogo das vozes do Kokoro (TTS) que o aluno pode escolher por
+    conversa — id + rótulo, pronto pra UI. Fixo (não vem de API nenhuma — a
+    Together não expõe lista de vozes por modelo; são as 3 confirmadas na
+    fonte primária do modelo, [095])."""
+    return [{"id": k, "rotulo": v} for k, v in VOZES_KOKORO.items()]
+
+
 class DocChatOut(BaseModel):
     id: int
     titulo: str
@@ -164,6 +183,8 @@ def criar(dados: NovaConversaIn, user: User = Depends(usuario_atual), db: Sessio
         raise HTTPException(status_code=422, detail=f"persona inválida — use uma de {PERSONAS}")
     if dados.modo_questao not in MODOS_QUESTAO:
         raise HTTPException(status_code=422, detail=f"modo_questao inválido — use um de {MODOS_QUESTAO}")
+    if dados.voz_escolhida is not None and dados.voz_escolhida not in VOZES_KOKORO:
+        raise HTTPException(status_code=422, detail=f"voz inválida — use uma de {list(VOZES_KOKORO)}")
     # [115]: exam_ids é a lista nova; exam_id singular continua aceito por
     # retrocompatibilidade (vira [exam_id] se exam_ids não vier preenchido).
     exam_ids = list(dados.exam_ids) if dados.exam_ids else ([dados.exam_id] if dados.exam_id else [])
@@ -175,7 +196,7 @@ def criar(dados: NovaConversaIn, user: User = Depends(usuario_atual), db: Sessio
                      rag_doc_ids=_rag_doc_ids_validos(db, dados.rag_doc_ids, dados.modo),
                      modelo_texto_id=dados.modelo_texto_id, modelo_visao_id=dados.modelo_visao_id,
                      modelo_voz_id=dados.modelo_voz_id, modelo_transcricao_id=dados.modelo_transcricao_id,
-                     modo_voz=dados.modo_voz)
+                     modo_voz=dados.modo_voz, voz_escolhida=dados.voz_escolhida)
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -191,6 +212,10 @@ class EditarConversaIn(BaseModel):
     modelo_voz_id: int | None = None
     modelo_transcricao_id: int | None = None
     modo_voz: bool | None = None
+    voz_escolhida: str | None = None
+    # [151]: `voz_escolhida=None` no payload é ambíguo (campo ausente ou "voltar
+    # ao padrão"?) — este flag explícito distingue "não mexer" de "limpar".
+    limpar_voz: bool = False
 
 
 _CAMPOS_MODELO = ("modelo_texto_id", "modelo_visao_id", "modelo_voz_id", "modelo_transcricao_id")
@@ -215,6 +240,12 @@ def editar(cid: int, dados: EditarConversaIn, user: User = Depends(usuario_atual
         valor = getattr(dados, campo)
         if valor is not None:
             setattr(c, campo, valor or None)
+    if dados.limpar_voz:
+        c.voz_escolhida = None
+    elif dados.voz_escolhida is not None:
+        if dados.voz_escolhida not in VOZES_KOKORO:
+            raise HTTPException(status_code=422, detail=f"voz inválida — use uma de {list(VOZES_KOKORO)}")
+        c.voz_escolhida = dados.voz_escolhida
     if dados.modo_voz is not None:
         c.modo_voz = dados.modo_voz
     db.commit()
@@ -237,7 +268,7 @@ def mensagens(cid: int, user: User = Depends(usuario_atual), db: Session = Depen
         "modo": c.modo, "modo_questao": c.modo_questao,
         "modelo_texto_id": c.modelo_texto_id, "modelo_visao_id": c.modelo_visao_id,
         "modelo_voz_id": c.modelo_voz_id, "modelo_transcricao_id": c.modelo_transcricao_id,
-        "modo_voz": c.modo_voz,
+        "modo_voz": c.modo_voz, "voz_escolhida": c.voz_escolhida,
         "mensagens": [{"role": m.role, "conteudo": m.conteudo, "question_id": m.question_id} for m in msgs],
     }
 

@@ -7,6 +7,7 @@ import logging
 import time
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.flags import CADASTROS_BLOQUEADOS, cadastros_bloqueados, set_flag
 from app.core.saude import medir
@@ -21,11 +22,28 @@ DEBOUNCE_S = 3600      # no máximo 1 alerta por hora
 _ultimo_alerta = 0.0
 
 
+def _registrar_historico_fila(db: Session, m: dict) -> None:
+    """[126]: amostra periódica (mesmo ciclo deste monitor) de carga + fila
+    de IA — histórico persistido pra o admin decidir quando escalar."""
+    from app.db.models import FilaHistorico
+    from app.modules.ai_registry.fila import colher_e_zerar, configurado
+
+    amostra = colher_e_zerar()
+    cfg = configurado(db)
+    db.add(FilaHistorico(
+        cpu_pct=round((m["load_por_cpu"] or 0) * 100, 1), memoria_pct=m["memoria_pct"], disco_pct=m["disco_pct"],
+        em_voo=amostra["em_voo"], esperando=amostra["esperando"], max_concorrente=cfg["max_concorrente"],
+        admitidas=amostra["admitidas"], rejeitadas=amostra["rejeitadas"], espera_media_ms=amostra["espera_media_ms"],
+    ))
+    db.commit()
+
+
 def _rodada() -> None:
     global _ultimo_alerta
     db = SessionLocal()
     try:
         m = medir(db)
+        _registrar_historico_fila(db, m)
         if m["status"] != "critico" or time.time() - _ultimo_alerta <= DEBOUNCE_S:
             return
         _ultimo_alerta = time.time()

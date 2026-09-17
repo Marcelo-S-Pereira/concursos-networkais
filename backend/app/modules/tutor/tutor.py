@@ -50,15 +50,27 @@ def explicar_questao(db: Session, questao: Question, user_id: int, student_answe
 
     mensagens = [{"role": "system", "content": sistema}, {"role": "user", "content": prompt}]
     resposta = servico.conversar(db, "texto", mensagens, origem="tutor_explica", max_tokens=2000)
-    dados = _parse_json_tolerante(resposta)
+    # [achado ao testar o fix de asterisco]: em questões de cálculo difíceis o
+    # LLM às vezes entra num loop de "revisar de novo" ([086]/[117], limite
+    # conhecido do modelo) e estoura max_tokens no meio do JSON — o parse
+    # falha (JSONDecodeError/ValueError). Sem isso, a rota crashava (500) pro
+    # aluno em vez de devolver uma mensagem honesta.
+    try:
+        dados = _parse_json_tolerante(resposta)
+    except (json.JSONDecodeError, ValueError):
+        dados = {}
 
     trick = dados.get("memory_trick") or {}
     error_type = str(dados.get("error_type", "NONE")).upper()
     if error_type not in TIPOS_ERRO:
         error_type = "NONE"
 
+    diagnosis = str(dados.get("diagnosis", "")).strip()
+    if not diagnosis and not dados:
+        diagnosis = "Não consegui montar a explicação desta vez — tente de novo."
+
     saida = {
-        "diagnosis": str(dados.get("diagnosis", "")).strip(),
+        "diagnosis": diagnosis,
         "mini_lesson": str(dados.get("mini_lesson", "")).strip(),
         "memory_trick": {
             "memory_hook": str(trick.get("memory_hook", "")).strip(),
@@ -109,7 +121,13 @@ def gerar_passo_a_passo(db: Session, questao: Question, user_id: int) -> list[st
                  {"role": "user", "content": prompt}]
     resposta = servico.conversar(db, "texto", mensagens, origem="tutor_passo_a_passo", max_tokens=1500,
                                  user_id=user_id)
-    dados = _parse_json_tolerante(resposta)
+    # mesmo achado do explicar_questao: questão de cálculo difícil pode fazer
+    # o LLM entrar num loop de "revisar de novo" e estourar max_tokens no
+    # meio do JSON — cai no fallback abaixo em vez de derrubar a rota (500).
+    try:
+        dados = _parse_json_tolerante(resposta)
+    except (json.JSONDecodeError, ValueError):
+        dados = {}
     passos = [str(p).strip() for p in (dados.get("passos") or []) if str(p).strip()]
     if not passos:
         passos = ["Não consegui montar os passos desta questão — tente 'Explicar' ou 'Mini-aula' em vez disso."]

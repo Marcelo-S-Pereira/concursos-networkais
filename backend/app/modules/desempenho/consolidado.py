@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    ChatAnswer,
     LlmTeachingOutput,
     Question,
     ReviewSchedule,
@@ -23,13 +24,22 @@ from app.modules.desempenho.mastery import por_enfase
 
 
 def _respostas(db: Session, user_id: int) -> list[tuple[str, bool]]:
-    rows = db.execute(
+    """[153]: soma respostas do Simulado E do Chat de estudos — antes só o
+    Simulado entrava aqui, então Mastery/Dificuldade/XP nunca refletiam o que
+    o aluno respondia no chat, mesmo com o gate de gabarito ([087]) já
+    funcionando lá."""
+    do_simulado = db.execute(
         select(Question.disciplina, SimulationAnswer.correta)
         .join(SimulationRun, SimulationRun.id == SimulationAnswer.run_id)
         .join(Question, Question.id == SimulationAnswer.question_id)
         .where(SimulationRun.user_id == user_id, SimulationAnswer.letra.isnot(None))
     ).all()
-    return [(d or "Sem classificação", bool(c)) for d, c in rows]
+    do_chat = db.execute(
+        select(Question.disciplina, ChatAnswer.correta)
+        .join(Question, Question.id == ChatAnswer.question_id)
+        .where(ChatAnswer.user_id == user_id)
+    ).all()
+    return [(d or "Sem classificação", bool(c)) for d, c in [*do_simulado, *do_chat]]
 
 
 def mastery_consolidado(db: Session, user_id: int) -> list[dict]:
