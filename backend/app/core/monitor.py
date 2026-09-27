@@ -4,7 +4,10 @@ usuário decidir migrar). Roda 1x (o serviço tem 1 worker). Nunca derruba o app
 
 import asyncio
 import logging
+import os
 import time
+from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,6 +23,51 @@ log = logging.getLogger("concursos.monitor")
 INTERVALO_S = 180      # checa a cada 3 min
 DEBOUNCE_S = 3600      # no máximo 1 alerta por hora
 _ultimo_alerta = 0.0
+
+# [176] O script scripts/backup_concursos.sh grava aqui "OK <data> dump=<bytes>" ou "FALHA <data> <motivo>".
+STATUS_BACKUP = Path(os.environ.get("BACKUP_STATUS_ARQUIVO", "/opt/app/.backup_concursos/status"))
+BACKUP_MAX_IDADE_H = 26   # o backup roda a cada 24 h; 2 h de folga
+DEBOUNCE_BACKUP_S = 6 * 3600
+_ultimo_alerta_backup = 0.0
+
+
+def problema_de_backup(caminho: Path = STATUS_BACKUP, agora: datetime | None = None) -> str | None:
+    """None = backup em dia. Backup que falha calado é a falha clássica — por isso o
+    monitor confere o status a cada rodada em vez de confiar no cron."""
+    try:
+        linha = caminho.read_text().strip().splitlines()[0]
+    except (OSError, IndexError):
+        return "não há registro de nenhum backup (arquivo de status ausente ou vazio)"
+    situacao, _, resto = linha.partition(" ")
+    quando, _, detalhe = resto.partition(" ")
+    if situacao == "FALHA":
+        return f"o último backup FALHOU ({quando}): {detalhe}"
+    try:
+        momento = datetime.fromisoformat(quando.replace("Z", "+00:00"))
+    except ValueError:
+        return "o arquivo de status do backup está ilegível"
+    idade_h = ((agora or datetime.now(UTC)) - momento).total_seconds() / 3600
+    if idade_h > BACKUP_MAX_IDADE_H:
+        return f"o último backup bom tem {idade_h:.0f} h (o limite é {BACKUP_MAX_IDADE_H} h)"
+    return None
+
+
+def _verificar_backup(db: Session) -> None:
+    global _ultimo_alerta_backup
+    problema = problema_de_backup()
+    if not problema or time.time() - _ultimo_alerta_backup <= DEBOUNCE_BACKUP_S:
+        return
+    _ultimo_alerta_backup = time.time()
+    corpo = (
+        "O backup do ConcurseiroIA precisa de atenção:\n\n"
+        f"{problema}\n\n"
+        "Veja /opt/app/backup_concursos.log na ambiente de execucao e rode scripts/backup_concursos.sh à mão. "
+        "Enquanto isso, os dados de usuários, créditos e conversas estão sem cópia recente."
+    )
+    admins = db.execute(select(User).where(User.role == "superadmin")).scalars().all()
+    for a in admins:
+        enviar_email(a.email, "⚠ Backup do ConcurseiroIA com problema", corpo)
+    log.warning("Backup com problema (%s): alerta enviado a %d admin(s).", problema, len(admins))
 
 
 def _registrar_historico_fila(db: Session, m: dict) -> None:
@@ -44,6 +92,7 @@ def _rodada() -> None:
     try:
         m = medir(db)
         _registrar_historico_fila(db, m)
+        _verificar_backup(db)  # antes do retorno antecipado abaixo: vale mesmo com a ambiente de execucao saudável
         if m["status"] != "critico" or time.time() - _ultimo_alerta <= DEBOUNCE_S:
             return
         _ultimo_alerta = time.time()

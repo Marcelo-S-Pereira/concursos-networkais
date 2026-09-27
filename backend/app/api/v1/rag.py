@@ -2,7 +2,6 @@
 similaridade. Sem conexão de embeddings, os chunks ficam salvos e são
 reindexados quando a conexão existir."""
 
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -29,6 +28,7 @@ class DocOut(BaseModel):
     uso_simulado: bool
     enviado_por: str | None  # [109]: nome de quem contribuiu (PDF/vídeo pela aba Tutor IA); None = admin
     tentativas_indexacao: int  # [110]: quantas vezes tentou gerar embedding
+    chunks_prontos: int  # [171]: trechos que já têm vetor do modelo atual (chunk_count = total)
 
 
 def _nome_de(db: Session, user_id: int | None) -> str | None:
@@ -37,22 +37,33 @@ def _nome_de(db: Session, user_id: int | None) -> str | None:
     return db.scalar(select(User.nome).where(User.id == user_id))
 
 
-def _saida(d: RagDocument, db: Session) -> DocOut:
+def _prontos(db: Session) -> dict[int, int]:
+    from app.modules.ai_registry.servico import modelo_de_embeddings
+    from app.modules.rag.indexador import progresso
+
+    return progresso(db, modelo_de_embeddings(db))
+
+
+def _saida(d: RagDocument, db: Session, prontos: dict[int, int] | None = None) -> DocOut:
+    prontos = _prontos(db) if prontos is None else prontos
     return DocOut(id=d.id, titulo=d.titulo, descricao=d.descricao, colecao=d.colecao, chunk_count=d.chunk_count,
                   indexado=d.indexado_em is not None, erro=d.erro,
                   uso_chat=d.uso_chat, uso_tutor=d.uso_tutor, uso_simulado=d.uso_simulado,
-                  enviado_por=_nome_de(db, d.enviado_por_user_id), tentativas_indexacao=d.tentativas_indexacao)
+                  enviado_por=_nome_de(db, d.enviado_por_user_id), tentativas_indexacao=d.tentativas_indexacao,
+                  chunks_prontos=prontos.get(d.id, 0))
 
 
 @router.get("/documentos", response_model=list[DocOut])
 def listar(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     docs = db.execute(select(RagDocument).order_by(RagDocument.id)).scalars().all()
     nomes = dict(db.execute(select(User.id, User.nome)).all())
+    prontos = _prontos(db)
     return [
         DocOut(id=d.id, titulo=d.titulo, descricao=d.descricao, colecao=d.colecao, chunk_count=d.chunk_count,
                indexado=d.indexado_em is not None, erro=d.erro,
                uso_chat=d.uso_chat, uso_tutor=d.uso_tutor, uso_simulado=d.uso_simulado,
-               enviado_por=nomes.get(d.enviado_por_user_id), tentativas_indexacao=d.tentativas_indexacao)
+               enviado_por=nomes.get(d.enviado_por_user_id), tentativas_indexacao=d.tentativas_indexacao,
+               chunks_prontos=prontos.get(d.id, 0))
         for d in docs
     ]
 
@@ -123,22 +134,14 @@ def editar_documento(
 
 @router.post("/documentos/{doc_id}/reindexar", response_model=DocOut)
 def reindexar(doc_id: int, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
-    from app.modules.ai_registry.cliente import AiCallError
-    from app.modules.ai_registry.servico import SemConexaoIA
-    from app.modules.rag.rag import _embed_pendentes
+    """[171]: não indexa na hora (um PDF grande leva dezenas de minutos na CPU da ambiente de execucao e
+    o nginx corta a requisição em 5) — recoloca o documento na fila do indexador."""
+    from app.modules.rag.rag import recolocar_na_fila
 
     doc = db.get(RagDocument, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado.")
-    try:
-        _embed_pendentes(db, doc)
-        doc.indexado_em = datetime.now(UTC)
-        doc.erro = None
-        db.commit()
-    except SemConexaoIA as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except AiCallError as e:
-        raise HTTPException(status_code=502, detail=f"Embeddings falharam: {e}") from e
+    recolocar_na_fila(db, doc)
     return _saida(doc, db)
 
 

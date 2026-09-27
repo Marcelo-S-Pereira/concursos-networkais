@@ -3,8 +3,9 @@
 Diferente de estatística de custo (admin-only) — um RECURSO aqui é algo que a
 comunidade PODE usar, mas só quem o admin autorizou, com um teto de uso por dia
 que o admin decide (ex.: 5 buscas de vídeo por pessoa). Sem grant = sem acesso,
-exceto o superadmin, que sempre tem — mas o uso dele também conta no total do
-pool, porque é cota real do provedor sendo gasta.
+exceto quem tem `sem_limites` (superadmin e vitalício, [169]), que sempre tem e
+nunca é barrado pela cota — mas o uso deles também conta no total do pool,
+porque é cota real do provedor sendo gasta.
 
 Catálogo extensível: adicionar um recurso novo é uma linha em `RECURSOS`, não
 uma tabela nova.
@@ -39,7 +40,7 @@ def _grant(db: Session, user_id: int, feature: str) -> FeatureGrant | None:
 
 
 def tem_acesso(db: Session, user: User, feature: str) -> bool:
-    if user.role == "superadmin":
+    if user.sem_limites:
         return True
     return _grant(db, user.id, feature) is not None
 
@@ -68,7 +69,7 @@ def uso_total_hoje(db: Session, feature: str) -> int:
 
 
 def excedeu_limite(db: Session, user: User, feature: str) -> bool:
-    if user.role == "superadmin":
+    if user.sem_limites:
         return False
     lim = limite_diario(db, user.id, feature)
     if lim <= 0:
@@ -112,7 +113,7 @@ def recursos_do_usuario(db: Session, user: User) -> dict[str, dict]:
     for chave in RECURSOS:
         liberado = tem_acesso(db, user, chave)
         limite = None
-        if liberado and user.role != "superadmin":
+        if liberado and not user.sem_limites:
             limite = limite_diario(db, user.id, chave)
         saida[chave] = {
             "liberado": liberado,

@@ -112,4 +112,11 @@ class AiCallLog(Base):
     unidades: Mapped[int | None] = mapped_column(Integer, nullable=True)  # STT: segundos; TTS: caracteres
     tipo_unidade: Mapped[str | None] = mapped_column(String(16), nullable=True)
     erro: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # [170] Em qual ferramenta e em qual AÇÃO do usuário a chamada aconteceu.
+    # `acao_id` agrupa as chamadas de uma ação (uma mensagem de voz = STT + busca
+    # na biblioteca + LLM + TTS): é a unidade justa para limite, não a chamada
+    # bruta. Histórico anterior à coluna fica NULL — não invento.
+    ferramenta: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    acao_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

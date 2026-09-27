@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import usuario_atual
 from app.db.models import ChatMessage, Conversation, RagDocument, User
 from app.db.session import get_db
-from app.modules.ai_registry import limites
+from app.modules.ai_registry import limites, uso
 from app.modules.ai_registry.cliente import AiCallError
 from app.modules.ai_registry.servico import SemConexaoIA
 from app.modules.chat.chat import responder, responder_e_falar, transcrever_pergunta
@@ -26,10 +26,17 @@ from app.modules.youtube.youtube import buscar as buscar_videos
 router = APIRouter(prefix="/chat")
 
 
+def _marcar_uso(c: Conversation) -> None:
+    """[170] Diz ao registro de uso em qual ferramenta esta requisição acontece.
+    Chat de estudo e Tutor IA compartilham as mesmas funções de IA; só a conversa
+    sabe qual dos dois é."""
+    uso.marcar(ferramenta="tutor_ia" if c.modo == "tutor" else "chat_estudo", conversation_id=c.id)
+
+
 def _isento(user: User) -> bool:
-    """Só o dono escapa dos limites rolantes. O vitalício não paga crédito, mas
-    continua com ritmo limitado — é para isso que o limite existe."""
-    return user.role == "superadmin"
+    """Dono e vitalício escapam dos limites rolantes ([169] — antes só o dono; o
+    [079] deixava o vitalício sujeito, e um QA vitalício foi bloqueado no chat)."""
+    return user.sem_limites
 
 
 MODOS_CONVERSA = ("chat", "tutor")  # [109]: "chat" = tutor do caderno; "tutor" = especialista geral (aba Tutor IA)
@@ -300,6 +307,7 @@ def enviar(cid: int, dados: MensagemIn, user: User = Depends(usuario_atual), db:
     if dados.imagem_b64 and len(dados.imagem_b64) > MAX_IMAGEM_B64:
         raise HTTPException(status_code=413, detail="Imagem grande demais. Use uma de até ~6 MB.")
 
+    _marcar_uso(c)
     # limites rolantes de uso (sessão de 5h + semana de 7 dias), estilo plataforma de estudo
     if motivo := limites.bloqueio(db, user.id, isento=_isento(user)):
         raise HTTPException(status_code=429, detail=motivo)
@@ -347,6 +355,7 @@ async def enviar_audio(cid: int, file: UploadFile = File(...), question_id: int 
     if len(audio_bytes) > MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Áudio grande demais (máx. ~15 MB).")
 
+    _marcar_uso(c)
     if motivo := limites.bloqueio(db, user.id, isento=_isento(user)):
         raise HTTPException(status_code=429, detail=motivo)
 
@@ -401,6 +410,7 @@ def enviar_com_fala(cid: int, dados: MensagemFaladaIn,
     if not dados.texto.strip():
         raise HTTPException(status_code=422, detail="Escreva a mensagem.")
 
+    _marcar_uso(c)
     if motivo := limites.bloqueio(db, user.id, isento=_isento(user)):
         raise HTTPException(status_code=429, detail=motivo)
 

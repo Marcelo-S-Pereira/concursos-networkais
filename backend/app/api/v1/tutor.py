@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import usuario_atual
 from app.db.models import Conversation, RagDocument, User
 from app.db.session import get_db
+from app.modules.ai_registry import uso
 from app.modules.creditos import acesso_diario
 from app.modules.youtube import youtube
 
@@ -113,6 +114,7 @@ async def enviar_arquivos(
     não fingido. `conversation_id` opcional já anexa à conversa ativa."""
     if motivo := acesso_diario.abrir(db, user):
         raise HTTPException(status_code=402, detail=motivo)
+    uso.marcar(ferramenta="tutor_ia")  # [170] o custo do envio é do Tutor IA, de quem enviou
 
     from app.modules.rag.rag import ingerir_documento
 
@@ -151,6 +153,7 @@ def enviar_video(dados: VideoIn, user: User = Depends(usuario_atual), db: Sessio
     é o real, não fingido."""
     if motivo := acesso_diario.abrir(db, user):
         raise HTTPException(status_code=402, detail=motivo)
+    uso.marcar(ferramenta="tutor_ia")  # [170] o custo do envio é do Tutor IA, de quem enviou
 
     from app.modules.ai_registry.cliente import AiCallError
     from app.modules.ai_registry.servico import SemConexaoIA
@@ -227,6 +230,7 @@ async def enviar_video_audio(
     pra isso."""
     if motivo := acesso_diario.abrir(db, user):
         raise HTTPException(status_code=402, detail=motivo)
+    uso.marcar(ferramenta="tutor_ia")  # [170] o custo do envio é do Tutor IA, de quem enviou
 
     dados = await file.read()
     if not dados:

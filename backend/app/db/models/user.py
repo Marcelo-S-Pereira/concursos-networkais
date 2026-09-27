@@ -46,6 +46,15 @@ class User(Base):
 
     codigos: Mapped[list["LoginCode"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
+    @property
+    def sem_limites(self) -> bool:
+        """Única regra de isenção de limite POR USUÁRIO ([169]): superadmin e
+        vitalício. Vale para porta diária de créditos, limite rolante de ritmo e
+        cota de recurso (YouTube). Não vale para o teto GLOBAL de orçamento em
+        US$ nem para a fila de admissão — esses protegem o bolso e a ambiente de execucao, não
+        são limite de pessoa."""
+        return self.role == "superadmin" or bool(self.vitalicio)
+
 
 class LoginCode(Base):
     """Código de login de uso único enviado por e-mail.

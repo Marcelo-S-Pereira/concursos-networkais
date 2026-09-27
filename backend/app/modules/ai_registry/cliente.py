@@ -155,7 +155,13 @@ def falar(conn: AiConnection, texto: str, voz: str, *, formato: str = "mp3") -> 
 
 def chamar_embeddings(conn: AiConnection, textos: list[str]) -> tuple[list[list[float]], dict]:
     if conn.endpoint.startswith("local://"):
-        raise AiCallError(f'"{conn.nome}" é um modelo LOCAL — execução do motor local ainda não ligada.')
+        from app.modules.ai_registry import embeddings_locais
+
+        try:
+            vetores, tokens = embeddings_locais.embed(conn.modelo, textos)
+        except embeddings_locais.ModeloLocalIndisponivel as e:
+            raise AiCallError(str(e)) from e
+        return vetores, {"prompt_tokens": tokens, "completion_tokens": 0, "total_tokens": tokens}
     chave = decifrar_ia(conn.api_key_cifrada)
     url = conn.endpoint.rstrip("/") + "/embeddings"
     try:

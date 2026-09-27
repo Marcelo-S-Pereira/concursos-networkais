@@ -20,32 +20,44 @@ def _inicio_mes() -> datetime:
 
 
 def gasto_usd(db: Session, desde: datetime) -> float:
+    """Gasto real em US$ desde `desde`: tokens (texto/visão/embeddings), segundos
+    (transcrição) e caracteres (voz) × preço da API. [170]: antes somava só tokens
+    e por isso NÃO enxergava transcrição nem voz — o guardrail via ~metade do
+    gasto de uma conversa por voz."""
     from app.modules.ai_registry.precos import precos_da_plataforma
+    from app.modules.ai_registry.telemetria import _custo_usd
 
     rows = db.execute(
         select(
             AiCallLog.connection_id,
+            AiCallLog.tipo_unidade,
             func.coalesce(func.sum(AiCallLog.prompt_tokens), 0),
             func.coalesce(func.sum(AiCallLog.completion_tokens), 0),
+            func.coalesce(func.sum(AiCallLog.unidades), 0),
         )
         .where(AiCallLog.criado_em >= desde, AiCallLog.connection_id.isnot(None))
-        .group_by(AiCallLog.connection_id)
+        .group_by(AiCallLog.connection_id, AiCallLog.tipo_unidade)
     ).all()
     if not rows:
         return 0.0
+    agregado: dict[int, list] = {}
+    for cid, tipo, pt, ct, un in rows:
+        a = agregado.setdefault(cid, [0, 0, {}])
+        a[0] += pt
+        a[1] += ct
+        if tipo and un:
+            a[2][tipo] = a[2].get(tipo, 0) + un
     conns = {c.id: c for c in db.execute(select(AiConnection)).scalars()}
     cache: dict[int, dict] = {}
     total = 0.0
-    for cid, pt, ct in rows:
+    for cid, (pt, ct, unidades) in agregado.items():
         conn = conns.get(cid)
         if not conn:
             continue
         if conn.platform_id not in cache:
             cache[conn.platform_id] = precos_da_plataforma(conn.plataforma)
-        p = cache[conn.platform_id].get((conn.modelo or "").lower())
-        if not p:
-            continue
-        total += pt / 1e6 * p["input"] + ct / 1e6 * p["output"]
+        custo, _ = _custo_usd(conn, cache[conn.platform_id], pt, ct, unidades)
+        total += custo or 0.0
     return round(total, 6)
 
 

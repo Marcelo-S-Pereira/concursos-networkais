@@ -1,24 +1,23 @@
 """Biblioteca RAG em PostgreSQL/pgvector.
 
 Chunk de 900 chars com 100 de sobreposição (corta por parágrafo). 1 embedding
-por chunk, em lote. Busca por distância de cosseno. Tolerante: se não houver
-conexão de embeddings, o texto do chunk é salvo sem vetor e é reindexado depois.
+por chunk. Busca por distância de cosseno, só entre vetores do modelo que gerou a
+consulta. Os vetores saem de `indexador.py` em segundo plano ([171]): o upload
+salva o texto e devolve, o documento fica "em análise" até indexar.
 """
 
 import logging
-from datetime import UTC, datetime
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.models import RagChunk, RagDocument
-from app.modules.ai_registry.servico import SemConexaoIA, gerar_embeddings
+from app.modules.ai_registry.servico import gerar_embeddings
 
 log = logging.getLogger("concursos.rag")
 
 CHUNK = 900
 OVERLAP = 100
-LOTE = 64
 
 
 def dividir(texto: str) -> list[str]:
@@ -43,23 +42,12 @@ def dividir(texto: str) -> list[str]:
     return chunks
 
 
-def _embed_pendentes(db: Session, doc: RagDocument) -> None:
-    """Gera embeddings para os chunks sem vetor deste documento, em lote.
-
-    [110]: conta a tentativa ANTES de chamar a IA — mesmo que falhe no meio,
-    a tentativa aconteceu; é o que "tentativas_indexacao" mostra pro admin."""
-    pendentes = db.execute(
-        select(RagChunk).where(RagChunk.document_id == doc.id, RagChunk.embedding.is_(None))
-    ).scalars().all()
-    if not pendentes:
-        return
-    doc.tentativas_indexacao += 1
-    db.commit()
-    for i in range(0, len(pendentes), LOTE):
-        bloco = pendentes[i : i + LOTE]
-        vetores = gerar_embeddings(db, [f"passage: {c.conteudo}" for c in bloco], origem="rag_ingest")
-        for chunk, vetor in zip(bloco, vetores, strict=True):
-            chunk.embedding = vetor
+def recolocar_na_fila(db: Session, doc: RagDocument) -> None:
+    """[171]: a indexação roda em segundo plano (`rag/indexador.py`) — o upload não
+    espera mais. Aqui o documento só volta ao estado "em análise"; o indexador
+    acha sozinho os trechos sem vetor do modelo atual."""
+    doc.indexado_em = None
+    doc.erro = None
     db.commit()
 
 
@@ -99,16 +87,7 @@ def ingerir_documento(
     doc.chunk_count = len(pedacos)
     db.commit()
 
-    # tenta indexar já; se não houver conexão de embeddings, fica pendente
-    try:
-        _embed_pendentes(db, doc)
-        doc.indexado_em = datetime.now(UTC)
-        doc.erro = None
-    except SemConexaoIA:
-        doc.erro = "sem conexão de embeddings — chunks salvos, reindexar depois"
-    except Exception as e:  # noqa: BLE001
-        doc.erro = str(e)[:500]
-    db.commit()
+    # os vetores saem do indexador em segundo plano; até lá o documento fica "em análise"
     db.refresh(doc)
     return doc
 
@@ -129,15 +108,15 @@ def buscar(
     biblioteca, "Perguntar ao edital"/"Buscar trechos") busca em tudo.
     `doc_ids` ([110]): quando a conversa do Tutor tem seleção própria de
     documentos, restringe a busca só a eles (dentro do `uso` já filtrado)."""
-    vetor = gerar_embeddings(db, [f"Instruct: buscar trecho relevante\nQuery: {consulta}"], origem="rag_busca")[0]
-    literal = "[" + ",".join(str(x) for x in vetor) + "]"
+    vetores, modelo = gerar_embeddings(db, [consulta], origem="rag_busca", tipo="consulta")
+    literal = "[" + ",".join(str(x) for x in vetores[0]) + "]"
     sql = """
         SELECT c.conteudo, d.titulo, c.chunk_index,
                c.embedding <=> CAST(:vec AS vector) AS distancia
         FROM rag_chunks c JOIN rag_documents d ON d.id = c.document_id
-        WHERE c.embedding IS NOT NULL
+        WHERE c.embedding IS NOT NULL AND c.embedding_modelo = :modelo
     """
-    params: dict = {"vec": literal, "k": k}
+    params: dict = {"vec": literal, "k": k, "modelo": modelo}
     if colecao:
         sql += " AND c.colecao = :colecao"
         params["colecao"] = colecao

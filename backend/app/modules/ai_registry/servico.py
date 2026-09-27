@@ -141,21 +141,47 @@ def falar_texto(db: Session, texto: str, *, origem: str, user_id: int | None = N
         raise ultimo_erro or SemConexaoIA("Todas as conexões de 'voz' falharam.")
 
 
-def gerar_embeddings(db: Session, textos: list[str], *, origem: str, user_id: int | None = None) -> list[list[float]]:
-    _checar_orcamento(db)
+def prefixar_embedding(modelo: str, tipo: str, texto: str) -> str:
+    """[171]: cada família de modelo espera um formato de entrada próprio; usar o
+    errado não dá erro, só piora a busca em silêncio. `tipo`: passagem | consulta."""
+    m = modelo.lower()
+    if "e5" not in m:
+        return texto
+    if tipo == "passagem":
+        return f"passage: {texto}"
+    return f"Instruct: buscar trecho relevante\nQuery: {texto}" if "instruct" in m else f"query: {texto}"
+
+
+def modelo_de_embeddings(db: Session) -> str | None:
+    """Modelo que a conexão ativa de embeddings usa hoje (é o que carimba os vetores)."""
+    cadeia = cadeia_para_categoria(db, "embeddings")
+    return cadeia[0].modelo if cadeia else None
+
+
+def gerar_embeddings(
+    db: Session, textos: list[str], *, origem: str, user_id: int | None = None,
+    tipo: str = "passagem", somente_primeira: bool = False,
+) -> tuple[list[list[float]], str]:
+    """Devolve (vetores, modelo que os gerou). Vetores de modelos diferentes não
+    se comparam, então quem guarda ou busca precisa saber de qual modelo vieram.
+    `somente_primeira` desliga o fallback — indexação em massa não pode misturar."""
     cadeia = cadeia_para_categoria(db, "embeddings")
     if not cadeia:
         raise SemConexaoIA("Nenhuma conexão de IA ativa para 'embeddings'.")
+    if somente_primeira:
+        cadeia = cadeia[:1]
     with fila.vaga(db):
         ultimo_erro: Exception | None = None
         for conn in cadeia:
+            if not conn.endpoint.startswith("local://"):
+                _checar_orcamento(db)
             inicio = time.monotonic()
             try:
-                vetores, usage = chamar_embeddings(conn, textos)
+                vetores, usage = chamar_embeddings(conn, [prefixar_embedding(conn.modelo, tipo, t) for t in textos])
                 registrar(db, connection_id=conn.id, categoria="embeddings", origem=origem, modelo=conn.modelo,
                           sucesso=True, latencia_ms=int((time.monotonic() - inicio) * 1000), usage=usage,
                           user_id=user_id)
-                return vetores
+                return vetores, conn.modelo
             except AiCallError as e:
                 registrar(db, connection_id=conn.id, categoria="embeddings", origem=origem, modelo=conn.modelo,
                           sucesso=False, latencia_ms=int((time.monotonic() - inicio) * 1000), erro=str(e),

@@ -39,9 +39,9 @@ def custo_do_dia(dia: date, pool_mensal: int) -> int:
 
 
 def _isento(user: User) -> bool:
-    """Só superadmin e vitalício hoje. "Moderador" não é um papel que existe
-    no sistema ainda — não invento um aqui."""
-    return user.role == "superadmin" or user.vitalicio
+    """Superadmin e vitalício ([169]: regra única em `User.sem_limites`).
+    "Moderador" não é um papel que existe no sistema ainda — não invento um aqui."""
+    return user.sem_limites
 
 
 def ja_pago_hoje(db: Session, user_id: int, hoje: date | None = None) -> bool:

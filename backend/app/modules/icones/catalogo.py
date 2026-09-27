@@ -46,4 +46,8 @@ SLOTS: dict[str, dict[str, str]] = {
     # do [161], emoji cru (🔼) rendia quebrado em várias telas.
     "chat.ir_topo": {"grupo": "Tutor IA", "rotulo": "Ir para o topo"},
     "chat.ir_fim": {"grupo": "Tutor IA", "rotulo": "Ir para o final"},
+    # [167]: menu de conversas virou colapsável (padrão assistentes de IA/
+    # Gemini) — este é o ícone que abre/fecha o drawer, no topo da conversa
+    # (Chat de estudo e Tutor IA).
+    "chat.painel_toggle": {"grupo": "Chat de estudo", "rotulo": "Abrir/fechar conversas"},
 }

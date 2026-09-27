@@ -38,9 +38,13 @@ TIMEOUT_S = 60.0
 
 async def chamar_chat_streaming(
     conn: AiConnection, mensagens: list[dict], *, max_tokens: int | None = None,
+    usage_out: dict | None = None,
 ) -> AsyncIterator[str]:
     """Gera o texto da resposta em pedaços (tokens/palavras), conforme o LLM
-    escreve — não espera a resposta inteira terminar."""
+    escreve — não espera a resposta inteira terminar. Se `usage_out` vier, é
+    preenchido com o `usage` que a própria API devolve no fim do stream
+    (prompt_tokens/completion_tokens/total_tokens) — testado ao vivo na Together,
+    vem mesmo sem pedir."""
     if conn.endpoint.startswith("local://"):
         raise RuntimeError(f'"{conn.nome}" é um modelo local — sem streaming ligado ainda.')
     chave = decifrar_ia(conn.api_key_cifrada)
@@ -65,6 +69,8 @@ async def chamar_chat_streaming(
                 obj = json.loads(dado)
             except json.JSONDecodeError:
                 continue
+            if usage_out is not None and obj.get("usage"):
+                usage_out.update(obj["usage"])
             delta = (obj.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
             if delta:
                 yield delta

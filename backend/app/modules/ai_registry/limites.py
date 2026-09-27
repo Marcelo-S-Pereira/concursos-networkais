@@ -31,8 +31,8 @@ JANELA_SEMANA_D = 7
 SESSAO = timedelta(hours=JANELA_SESSAO_H)
 SEMANA = timedelta(days=JANELA_SEMANA_D)
 
-PADRAO_SESSAO = "40"
-PADRAO_SEMANA = "200"
+PADRAO_SESSAO = "5000"
+PADRAO_SEMANA = "35000"
 
 
 def _int_flag(db: Session, chave: str, padrao: str) -> int:

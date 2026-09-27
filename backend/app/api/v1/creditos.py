@@ -27,7 +27,7 @@ def meus_creditos(user: User = Depends(usuario_atual), db: Session = Depends(get
     r = resumo(db, user.id)
     # acesso livre (não consome crédito): o dono OU quem tem vitalício. Decidido no
     # servidor a partir do banco — o cliente não influencia isto.
-    r["acesso_livre"] = user.role == "superadmin" or user.vitalicio
+    r["acesso_livre"] = user.sem_limites
     r["vitalicio"] = user.vitalicio
     return r
 

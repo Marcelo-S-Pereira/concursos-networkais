@@ -120,6 +120,16 @@ def fila_historico(dias: int = 7, _: User = Depends(apenas_superadmin), db: Sess
     ]
 
 
+@router.get("/uso/resumo")
+def uso_resumo(dias: int = 7, _: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
+    """[170] Consumo de IA por ferramenta e por usuário, na unidade da API (tokens,
+    segundos de transcrição, caracteres de voz) e em custo derivado na leitura —
+    a base para definir limites com dado real. Ver `ai_registry/consumo.py`."""
+    from app.modules.ai_registry import consumo
+
+    return consumo.resumo(db, dias)
+
+
 @router.get("/youtube")
 def youtube_config(_: User = Depends(apenas_superadmin), db: Session = Depends(get_db)):
     """Estado da chave da YouTube Data API — nunca em claro, só mascarada."""

@@ -60,5 +60,8 @@ class RagChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer)
     conteudo: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(DIM_EMBEDDING), nullable=True)
+    # [171]: qual modelo gerou o vetor. Vetores de modelos diferentes não se comparam;
+    # a busca só olha os do modelo que gerou a consulta, e o indexador refaz o resto.
+    embedding_modelo: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     documento: Mapped[RagDocument] = relationship(back_populates="chunks")

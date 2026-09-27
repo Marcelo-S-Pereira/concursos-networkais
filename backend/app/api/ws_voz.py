@@ -28,6 +28,7 @@ import asyncio
 import contextlib
 import json
 import re
+import time
 
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -36,10 +37,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ChatMessage, Conversation, User
 from app.db.session import SessionLocal
-from app.modules.ai_registry import limites
+from app.modules.ai_registry import limites, uso
 from app.modules.ai_registry.orcamento import diario_excedido
 from app.modules.ai_registry.resolver import cadeia_para_categoria
 from app.modules.ai_registry.servico import VOZES_PADRAO, _com_escolhida
+from app.modules.ai_registry.uso import registrar
 from app.modules.chat.chat import _material_selecionado
 from app.modules.chat.voz_streaming import SessaoSTT, chamar_chat_streaming, falar_streaming
 from app.modules.creditos import acesso_diario
@@ -115,9 +117,14 @@ async def tutor_voz_ws(websocket: WebSocket, conversation_id: int):
             await websocket.close(code=4404, reason="Conversa não encontrada.")
             return
 
-        # [079]: só o dono escapa dos limites rolantes — mesmo critério de
-        # `chat.py::_isento`, vitalício continua com ritmo limitado.
-        if motivo := limites.bloqueio(db, user.id, isento=user.role == "superadmin"):
+        # [170] Registro de uso: tudo o que esta conexão gastar fica atribuído a
+        # esta pessoa, a esta ferramenta e a esta conversa; cada turno abre a sua
+        # própria ação (ver `uso.nova_acao` abaixo).
+        uso.marcar(user_id=user.id, ferramenta="tutor_ia_tempo_real", conversation_id=conversa.id)
+
+        # Limites rolantes ([079]): dono e vitalício são isentos ([169]) — mesmo
+        # critério de `chat.py::_isento`, regra única em `User.sem_limites`.
+        if motivo := limites.bloqueio(db, user.id, isento=user.sem_limites):
             await websocket.close(code=4429, reason=motivo)
             return
         if motivo := acesso_diario.abrir(db, user):
@@ -141,6 +148,23 @@ async def tutor_voz_ws(websocket: WebSocket, conversation_id: int):
         voz = conversa.voz_escolhida or VOZES_PADRAO.get((conn_tts.modelo or "").lower(), "alloy")
 
         await websocket.accept()
+
+        # [170] O STT em streaming é cobrado pelo áudio enviado (PCM16 16 kHz mono
+        # = 32.000 bytes por segundo), inclusive nos silêncios entre falas.
+        stt = {"bytes": 0, "t0": time.monotonic()}
+
+        def _gravar_stt(sucesso: bool, erro: str | None = None) -> None:
+            if not stt["bytes"]:
+                return
+            segundos = stt["bytes"] / 32000
+            registrar(
+                db, connection_id=conn_stt.id, categoria="transcricao", origem="tutor_voz_stt",
+                modelo=conn_stt.modelo, sucesso=sucesso,
+                latencia_ms=int((time.monotonic() - stt["t0"]) * 1000),
+                unidades=max(1, round(segundos)), tipo_unidade="segundos", erro=erro,
+            )
+            stt["bytes"] = 0
+            stt["t0"] = time.monotonic()
 
         sessao_stt = SessaoSTT(conn_stt, idioma="pt")
         try:
@@ -167,6 +191,7 @@ async def tutor_voz_ws(websocket: WebSocket, conversation_id: int):
                 if msg.get("type") == "websocket.disconnect":
                     break
                 if msg.get("bytes") is not None:
+                    stt["bytes"] += len(msg["bytes"])
                     # [145]: a conexão STT->Together pode ter caído sozinha
                     # (ver `_reconectar_stt`) — reconecta e descarta só este
                     # pedaço perdido, sem derrubar a sessão de voz inteira.
@@ -184,6 +209,7 @@ async def tutor_voz_ws(websocket: WebSocket, conversation_id: int):
                 tipo = dados.get("type")
 
                 if tipo == "commit":
+                    uso.nova_acao()  # [170] cada turno = uma ação do usuário
                     try:
                         await sessao_stt.commit()
                         transcript_final = None
@@ -214,6 +240,7 @@ async def tutor_voz_ws(websocket: WebSocket, conversation_id: int):
                     except TimeoutError:
                         pass
                     except websockets.exceptions.ConnectionClosed:
+                        _gravar_stt(False, "conexão com o STT caiu no meio do turno")
                         # o turno em andamento se perde (a Together não tem
                         # mais o áudio commitado) — o aluno só fala de novo.
                         nova = await _reconectar_stt(websocket, sessao_stt, conn_stt)
@@ -240,7 +267,9 @@ async def tutor_voz_ws(websocket: WebSocket, conversation_id: int):
                     # commit nenhum. [146] já cobria o caso de NÃO persistir
                     # transcrição vazia; isto aqui cobre o caso de sempre
                     # avisar o cliente que o turno (mesmo vazio) terminou.
-                    if transcript_final and transcript_final.strip():
+                    com_fala = bool(transcript_final and transcript_final.strip())
+                    _gravar_stt(com_fala, None if com_fala else "commit sem transcrição")
+                    if com_fala:
                         await websocket.send_json({"type": "transcript_final", "text": transcript_final})
                         await _processar_turno(websocket, db, conversa, conn_llm, conn_tts, voz, transcript_final)
                     else:
@@ -251,6 +280,7 @@ async def tutor_voz_ws(websocket: WebSocket, conversation_id: int):
         except WebSocketDisconnect:
             pass
         finally:
+            _gravar_stt(False, "áudio enviado sem commit (sessão encerrada)")
             await sessao_stt.fechar()
     finally:
         db.close()
@@ -274,8 +304,12 @@ async def _processar_turno(
 
     resposta_completa = ""
     buffer = ""
+    usage: dict = {}
+    tts = {"chars": 0, "ms": 0}
+    erro_turno: str | None = None
+    t_llm = time.monotonic()
     try:
-        async for delta in chamar_chat_streaming(conn_llm, mensagens, max_tokens=800):
+        async for delta in chamar_chat_streaming(conn_llm, mensagens, max_tokens=800, usage_out=usage):
             resposta_completa += delta
             buffer += delta
             await websocket.send_json({"type": "llm_delta", "text": delta})
@@ -283,13 +317,28 @@ async def _processar_turno(
             while len(partes) > 1:
                 frase = partes.pop(0).strip()
                 if frase:
-                    await _falar_frase(websocket, conn_tts, voz, frase)
+                    await _falar_frase(websocket, conn_tts, voz, frase, tts)
                 buffer = partes[0] if partes else ""
                 partes = [buffer]
         if buffer.strip():
-            await _falar_frase(websocket, conn_tts, voz, buffer.strip())
+            await _falar_frase(websocket, conn_tts, voz, buffer.strip(), tts)
     except Exception as e:  # noqa: BLE001 — turno isolado; sessão continua de pé pro próximo
+        erro_turno = str(e)
         await websocket.send_json({"type": "error", "detail": f"Falha na resposta: {e}"})
+
+    # [170] Uso deste turno, na unidade que a API cobra: tokens exatos do stream
+    # (LLM) e caracteres falados (TTS). Falha não vira "ação" — o custo fica visível.
+    registrar(
+        db, connection_id=conn_llm.id, categoria="texto", origem="tutor_voz_llm", modelo=conn_llm.modelo,
+        sucesso=erro_turno is None and bool(resposta_completa),
+        latencia_ms=int((time.monotonic() - t_llm) * 1000), usage=usage or None, erro=erro_turno,
+    )
+    if tts["chars"]:
+        registrar(
+            db, connection_id=conn_tts.id, categoria="voz", origem="tutor_voz_tts", modelo=conn_tts.modelo,
+            sucesso=erro_turno is None, latencia_ms=tts["ms"],
+            unidades=tts["chars"], tipo_unidade="caracteres", erro=erro_turno,
+        )
 
     db.add(ChatMessage(conversation_id=conversa.id, role="user", conteudo=texto_usuario))
     if resposta_completa:
@@ -298,7 +347,12 @@ async def _processar_turno(
     await websocket.send_json({"type": "response_done"})
 
 
-async def _falar_frase(websocket: WebSocket, conn_tts, voz: str, frase: str) -> None:
-    async for pedaco_pcm in falar_streaming(conn_tts, frase, voz):
-        await websocket.send_bytes(pedaco_pcm)
+async def _falar_frase(websocket: WebSocket, conn_tts, voz: str, frase: str, tts: dict) -> None:
+    inicio = time.monotonic()
+    tts["chars"] += len(frase)  # a API cobra pelo texto enviado, mesmo se o cliente cair no meio
+    try:
+        async for pedaco_pcm in falar_streaming(conn_tts, frase, voz):
+            await websocket.send_bytes(pedaco_pcm)
+    finally:
+        tts["ms"] += int((time.monotonic() - inicio) * 1000)
     await websocket.send_json({"type": "sentence_end"})

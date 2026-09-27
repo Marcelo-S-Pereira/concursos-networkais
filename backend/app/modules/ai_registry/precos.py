@@ -20,6 +20,11 @@ from app.core.crypto import decifrar_ia
 log = logging.getLogger("concursos.ai")
 
 _TTL_S = 3600
+# [170] Falha de preço também é lembrada, por pouco tempo. Antes cada tentativa
+# falha esperava até 20 s e se repetia a CADA chamada de IA (o teto de orçamento
+# consulta os preços em toda requisição) — se o `/models` do provedor ficasse
+# lento, o app inteiro ficava lento junto.
+_RETRY_APOS_FALHA_S = 60
 _cache: dict[int, dict] = {}  # platform_id -> {"ts": float, "precos": {model_lower: {...}}}
 
 
@@ -64,4 +69,6 @@ def precos_da_plataforma(plat) -> dict:
         return precos
     except Exception as e:  # noqa: BLE001 - preço é best-effort; sem ele o custo fica "—"
         log.warning("preços do provedor indisponíveis (plataforma %s): %s", plat.id, str(e)[:120])
-        return c["precos"] if c else {}
+        anteriores = c["precos"] if c else {}
+        _cache[plat.id] = {"ts": agora - _TTL_S + _RETRY_APOS_FALHA_S, "precos": anteriores}
+        return anteriores

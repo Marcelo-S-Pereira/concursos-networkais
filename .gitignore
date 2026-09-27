@@ -97,3 +97,9 @@ Thumbs.db
 
 # Backups locais de tabelas (contem chaves cifradas) - nunca versionar
 backups_local/
+
+# [171]: pesos de modelos de IA locais (centenas de MB) — nunca vão pro git
+backend/modelos_locais/
+
+# [176]: chaves GnuPG exportadas (a privada nunca pode ir pro git)
+*.asc
