@@ -112,6 +112,31 @@ export type Orcamento = {
     gasto_hoje_usd: number; gasto_mes_usd: number
     pct_dia: number; pct_mes: number; projecao_mes_usd: number; diario_excedido: boolean
 }
+export type Dinheiro = { usd: number; brl: number }
+export type UsoTotais = {
+    chamadas: number; falhas: number; tokens_in: number; tokens_out: number
+    stt_seg: number; tts_chars: number; custo: Dinheiro
+}
+export type UsoDist = { n: number; p50: number | Dinheiro | null; p90: number | Dinheiro | null; max: number | Dinheiro | null }
+export type UsoFerramenta = UsoTotais & {
+    ferramenta: string; acoes: number; acoes_falhas: number
+    custo_por_acao_clientes: { n: number; p50: Dinheiro | null; p90: Dinheiro | null; max: Dinheiro | null }
+}
+export type UsoUsuario = {
+    user_id: number | null; nome: string; email: string | null; sem_limites: boolean
+    total: UsoTotais; dias_ativos: number
+    por_ferramenta: (UsoTotais & { ferramenta: string; acoes: number })[]
+}
+export type ConsumoResumo = {
+    dias: number; desde: string; cotacao: { usd_brl: number; fonte: string }; total: Dinheiro
+    ferramentas: UsoFerramenta[]; usuarios: UsoUsuario[]
+    distribuicao_clientes: {
+        usuarios_com_uso: number
+        custo_por_usuario_dia: { n: number; p50: Dinheiro | null; p90: Dinheiro | null; max: Dinheiro | null }
+        acoes_por_usuario_dia: { n: number; p50: number | null; p90: number | null; max: number | null }
+    }
+    notas: string[]
+}
 export type FilaEstado = {
     max_concorrente: number; cpu_pct_max: number; mem_pct_max: number; disco_pct_max: number; timeout_espera_s: number
     em_voo: number; esperando: number; cpu_pct: number; memoria_pct: number | null; disco_pct: number | null
@@ -174,7 +199,7 @@ export type Plataforma = {
 export type PlataformaInput = { titulo: string; endpoint: string; api_key: string }
 export type RagDoc = {
     id: number; titulo: string; descricao: string; colecao: string; chunk_count: number; indexado: boolean; erro: string | null
-    uso_chat: boolean; uso_tutor: boolean; uso_simulado: boolean; enviado_por: string | null; tentativas_indexacao: number
+    uso_chat: boolean; uso_tutor: boolean; uso_simulado: boolean; enviado_por: string | null; tentativas_indexacao: number; chunks_prontos: number
 }
 export type ConexaoIA = {
     id: number; platform_id: number; plataforma_titulo: string
@@ -319,6 +344,7 @@ export const api = {
         }),
     chatApagar: (cid: number) => pedir<void>(`/chat/conversas/${cid}`, { method: "DELETE" }),
     chatLimites: () => pedir<LimitesUso>("/chat/limites"),
+    adminUsoResumo: (dias: number) => pedir<ConsumoResumo>(`/admin/uso/resumo?dias=${dias}`),
     adminOrcamento: () => pedir<Orcamento>("/admin/orcamento"),
     salvarOrcamento: (mensal_usd: number, diario_usd: number | null) =>
         pedir<Orcamento>("/admin/orcamento", { method: "POST", body: JSON.stringify({ mensal_usd, diario_usd }) }),

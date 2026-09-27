@@ -151,7 +151,7 @@ function Painel({ usuario, aoSair, aoAtualizarUsuario }: { usuario: Usuario; aoS
             </aside>
 
             {aba === "caderno" && <Caderno modo={modo} />}
-            {aba === "chat" && <Chat aoGastar={recarregarCreditos} />}
+            {aba === "chat" && <Chat aoGastar={recarregarCreditos} modo={modo} />}
             {aba === "tutor_ia" && <TutorIA aoGastar={recarregarCreditos} modo={modo} />}
             {aba === "revisao" && <Revisao />}
             {aba === "desempenho" && <Desempenho />}

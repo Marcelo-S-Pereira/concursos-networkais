@@ -113,7 +113,9 @@ export default function Biblioteca() {
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <strong style={{ display: "block", overflowWrap: "anywhere" }}>{d.titulo}</strong>
                                 <span className="caderno-meta">
-                                    {d.colecao} · {d.chunk_count} trechos · {d.indexado ? "indexado" : (d.erro ? "pendente" : "não indexado")}
+                                    {d.colecao} · {d.chunk_count} trechos · {d.chunks_prontos >= d.chunk_count
+                                        ? "indexado"
+                                        : d.erro ? `pausado: ${d.erro.slice(0, 60)}` : `indexando ${d.chunks_prontos}/${d.chunk_count}`}
                                     {d.enviado_por && <> · enviado por {d.enviado_por}</>}
                                 </span>
                                 {d.descricao && <span className="caderno-meta" style={{ display: "block" }}>{d.descricao}</span>}

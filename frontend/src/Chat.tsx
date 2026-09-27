@@ -596,76 +596,6 @@ function escutarUmaFala(onDetectada: () => void): () => void {
     return pararEscuta
 }
 
-export type EstadoMic = { count: number; erro: string | null } | null
-
-/** Checagem REAL de microfone via mediaDevices — nunca decorativa. Sem pedir
- *  permissão ela só enumera dispositivos (não pede nada ao usuário); com
- *  `pedirPermissao` chama getUserMedia de verdade e reavalia. Exportada —
- *  reaproveitada pela aba Tutor IA ([109]), mesmo padrão de honestidade. */
-export async function checarMicrofone(pedirPermissao: boolean): Promise<EstadoMic> {
-    if (!navigator.mediaDevices?.enumerateDevices) {
-        return { count: 0, erro: "Este navegador não oferece acesso a microfone." }
-    }
-    try {
-        if (pedirPermissao) {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-            stream.getTracks().forEach((t) => t.stop())
-        }
-        const dispositivos = await navigator.mediaDevices.enumerateDevices()
-        const entradas = dispositivos.filter((d) => d.kind === "audioinput")
-        return { count: entradas.length, erro: entradas.length ? null : "Nenhum microfone foi detectado neste dispositivo." }
-    } catch (e) {
-        const negada = e instanceof DOMException && e.name === "NotAllowedError"
-        return { count: 0, erro: negada ? "Permissão de microfone negada — habilite nas configurações do navegador." : "Não foi possível acessar o microfone." }
-    }
-}
-
-/** Exportado — o Tutor IA ([120]) reusa pro próprio "modo carro". */
-export function PopupVoz({
-    mic, onVerificar, maosLivres, onAlternarMaosLivres,
-}: {
-    mic: EstadoMic
-    onVerificar: () => void
-    maosLivres: boolean
-    onAlternarMaosLivres: () => void
-}) {
-    return (
-        <Popup className="popup-voz" align="direita">
-            <div className="popup-secao">
-                <p className="popup-titulo">Modo voz</p>
-                <button className={`popup-linha ${maosLivres ? "sel" : ""}`} onClick={onAlternarMaosLivres}>
-                    <span>{maosLivres ? "Desligar" : "Ligar"} — fica ouvindo, fala, envia e responde sozinho</span>
-                    {maosLivres && <span className="check">✓</span>}
-                </button>
-                <p className="popup-vazio">
-                    Liga uma vez e conversa sem tocar na tela. Detecta pelo NÍVEL DE SOM quando você começa e
-                    para de falar (não é reconhecimento de voz de verdade); em lugar muito barulhento pode
-                    disparar sozinho ou demorar a perceber o silêncio. Se atrapalhar, desligue e use o botão de
-                    apertar-e-segurar abaixo.
-                </p>
-            </div>
-            <div className="popup-secao">
-                <p className="popup-titulo">Como gravar (manual)</p>
-                <p className="popup-vazio">Toque e segure o 🎤 no compositor para gravar sua pergunta; solte para
-                    enviar. O tutor ouve, responde e fala de volta.</p>
-            </div>
-            <div className="popup-secao">
-                <p className="popup-titulo">Microfone</p>
-                {mic == null ? (
-                    <p className="popup-vazio">verificando…</p>
-                ) : mic.erro ? (
-                    <>
-                        <p className="popup-aviso">⚠ {mic.erro}</p>
-                        <button className="popup-linha" onClick={onVerificar}><span>⚙️ Permitir e verificar novamente</span></button>
-                    </>
-                ) : (
-                    <p className="popup-ok">🎙️ {mic.count} microfone{mic.count === 1 ? "" : "s"} detectado{mic.count === 1 ? "" : "s"}</p>
-                )}
-            </div>
-        </Popup>
-    )
-}
-
 function Ritmo({ l }: { l: LimitesUso }) {
     if (l.isento) return <p className="chat-ritmo livre">Uso livre — administrador, sem limite de ritmo.</p>
     const partes: string[] = []
@@ -683,7 +613,15 @@ function Ritmo({ l }: { l: LimitesUso }) {
     )
 }
 
-export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
+export default function Chat({ aoGastar, modo }: { aoGastar?: () => void; modo: "celular" | "computador" }) {
+    /** [167]: painel de conversas virou drawer — aberto por padrão no
+     * computador (como assistentes de IA desktop), fechado no celular (precisa
+     * tocar o ícone no topo da conversa pra abrir). */
+    const [painelAberto, setPainelAberto] = useState(modo === "computador")
+    function fecharPainel() {
+        setPainelAberto(false)
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    }
     const [conversas, setConversas] = useState<Conversa[]>([])
     const [cadernos, setCadernos] = useState<Exame[]>([])
     const [docsChat, setDocsChat] = useState<DocChat[]>([])
@@ -707,7 +645,6 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
     const [limites, setLimites] = useState<LimitesUso | null>(null)
     const [cfgAberta, setCfgAberta] = useState(false)
     const [anexarAberta, setAnexarAberta] = useState(false)
-    const [vozAberta, setVozAberta] = useState(false)
     const [acoesAberta, setAcoesAberta] = useState(false)
     const [passoAPassoAberto, setPassoAPassoAberto] = useState(false)
     // Só mostra o seletor A-E depois de pedido explicitamente ("Responder esta
@@ -745,7 +682,6 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
             return novo
         })
     }
-    const [mic, setMic] = useState<EstadoMic>(null)
     const [recursos, setRecursos] = useState<Record<string, MeuRecurso>>({})
     // Gravação: aperta e segura o 🎤 (pointer down/up — funciona com mouse e
     // toque no mesmo handler), solta e envia. `gravSeg` só de exibição (não
@@ -905,11 +841,6 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
         else if (r.b64) setAnexo({ nome: "captura-de-tela.png", b64: r.b64 })
     }
 
-    async function abrirPopupVoz() {
-        setVozAberta((v) => !v)
-        if (mic == null) setMic(await checarMicrofone(false))
-    }
-
     /** Aperta o 🎤: pede o microfone de verdade (um stream NOVO, fechado ao
      *  soltar) e começa a gravar. Erro real (sem microfone/permissão negada)
      *  aparece na faixa de erro do chat, não fica escondido. */
@@ -1059,7 +990,6 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
         pausarEscutaRef.current = false
         maosLivresRef.current = true
         setMaosLivres(true)
-        setVozAberta(false)
 
         // calibra o ruído ambiente por ~700ms antes de começar a decidir nada
         const amostras: number[] = []
@@ -1385,13 +1315,24 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
 
     return (
         <div className="chat">
-            <aside className="chat-painel">
-                {/* metade de cima: tudo que é configurável / exploração */}
-                <div className="chat-box">
-                    <div className="chat-box-cab"><h4>Configurações e recursos</h4> <Feedback ferramenta="chat" /></div>
-                    <div className="chat-box-corpo">
-                        {ativa == null ? (
-                            <p className="chat-vazio">Abra uma conversa para configurar.</p>
+            <div className="chat-card">
+                {/* [167]: ícone que abre/fecha o drawer de conversas — só
+                    existe aqui dentro do chat, como no assistentes de IA. */}
+                <div className="chat-cab">
+                    <button onClick={() => (painelAberto ? fecharPainel() : setPainelAberto(true))} aria-label="Conversas">
+                        <Icone slot="chat.painel_toggle" textoPadrao="☰" />
+                    </button>
+                    {conversa && <span className="chat-cab-titulo">{conversa.titulo}</span>}
+                </div>
+                <div className="chat-body">
+                    {painelAberto && <div className="chat-painel-backdrop" onClick={fecharPainel} />}
+                    <aside className={`chat-painel ${painelAberto ? "aberto" : ""}`} aria-hidden={!painelAberto}>
+                        {/* metade de cima: tudo que é configurável / exploração */}
+                        <div className="chat-box">
+                            <div className="chat-box-cab"><h4>Configurações e recursos</h4> <Feedback ferramenta="chat" /></div>
+                            <div className="chat-box-corpo">
+                                {ativa == null ? (
+                                    <p className="chat-vazio">Abra uma conversa para configurar.</p>
                         ) : (
                             <>
                                 <p className="chat-caderno">
@@ -1400,8 +1341,39 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                         : "Sem caderno — conversa livre"}
                                     {conversa?.modo_questao === "random" && " · 🎲 modo aleatório"}
                                 </p>
-                                <p className="popup-vazio">A questão em estudo agora se escolhe embaixo do campo de
-                                    mensagem, do lado da conversa.</p>
+
+                                {/* [167]: seleção de questão morava embaixo do campo de mensagem,
+                                    poluindo a área de digitar — agora mora aqui, junto do resto das
+                                    configurações da conversa. */}
+                                {questoes.length > 0 && (
+                                    <div className="chat-questao-picker">
+                                        {conversa?.modo_questao === "random" ? (
+                                            <button disabled={enviando} onClick={questaoAleatoria} style={{ width: "100%" }}>
+                                                🎲 Questão aleatória
+                                            </button>
+                                        ) : (
+                                            <label>Questão em estudo
+                                                <select value={qid} onChange={(e) => setQid(e.target.value === "" ? "" : Number(e.target.value))}>
+                                                    <option value="">— escolher —</option>
+                                                    {questoes.map((q) => (
+                                                        <option key={q.id} value={q.id}>
+                                                            Q{examIdsConversa.length > 1 ? `${q.examId}.${q.numero}` : q.numero} · {q.disciplina}{q.tem_figura ? " 🖼" : ""}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </label>
+                                        )}
+                                        {emFoco && (
+                                            <div className="chat-foco">
+                                                <p className="chat-foco-enun">{semHtml(emFoco.pergunta || emFoco.enunciado).slice(0, 150) || "(sem enunciado)"}…</p>
+                                                {emFoco.tem_figura && <p className="chat-foco-fig">🖼 tem figura — a IA de imagem lê</p>}
+                                                <p className="chat-foco-status">
+                                                    {respostaFoco ? `✓ você respondeu ${respostaFoco} — veja os recursos no botão 🎓` : "Abra o botão 🎓 e toque em \"Ler questão\" para ver o enunciado e responder."}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {limites && <Ritmo l={limites} />}
                             </>
@@ -1450,7 +1422,8 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                             </div>
                         )}
                         {conversas.map((c) => (
-                            <div key={c.id} className={`chat-conv ${c.id === ativa ? "ativa" : ""}`} onClick={() => setAtiva(c.id)}>
+                            <div key={c.id} className={`chat-conv ${c.id === ativa ? "ativa" : ""}`}
+                                onClick={() => { setAtiva(c.id); if (modo === "celular") fecharPainel() }}>
                                 <span className="chat-conv-titulo">{c.titulo}</span>
                                 <button className="link" title="Apagar conversa" onClick={async (e) => { e.stopPropagation(); if (confirm("Apagar conversa?")) { await api.chatApagar(c.id); if (ativa === c.id) setAtiva(null); await carregarConversas() } }}>✕</button>
                             </div>
@@ -1458,9 +1431,9 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                         {!conversas.length && !novaAberta && <p className="chat-vazio">Nenhuma conversa ainda.</p>}
                     </div>
                 </div>
-            </aside>
+                    </aside>
 
-            <section className="chat-thread">
+                    <section className="chat-thread">
                 {ativa == null ? (
                     <div className="chat-abertura">
                         <h3>Tutor de estudo</h3>
@@ -1594,18 +1567,18 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
 
                                     <span className="chat-espaco" />
 
-                                    {/* [123]: destacado, ao lado da escolha de IA — antes só vivia dentro
-                                        do popup do microfone (⌄), pouco visível. */}
-                                    <button className={`pill voz-mode ${maosLivres ? "ativo" : ""}`} onClick={alternarMaosLivres}
+                                    {/* [167]: ícone-só, mesmo padrão já validado no Tutor IA ([159]) —
+                                        antes era pill com o nome do modelo por extenso, poluindo a
+                                        linha; agora só o ícone, com o nome no tooltip. */}
+                                    <button className={`pill voz-mode icone-so ${maosLivres ? "ativo" : ""}`} onClick={alternarMaosLivres}
                                         title="Modo voz: liga uma vez, fica ouvindo, fala, envia e responde sozinho">
                                         <Icone slot="compositor.modo_voz" textoPadrao="Modo voz" />
                                     </button>
 
                                     {conversa && (
                                         <span className="popup-anchor">
-                                            <button className="pill" onClick={() => setCfgAberta((v) => !v)}>
-                                                <span className="pill-modelo">{modeloTextoLabel}</span>
-                                                <span className="chevron">⌄</span>
+                                            <button className="pill icone-so" onClick={() => setCfgAberta((v) => !v)} title={`IA: ${modeloTextoLabel}`}>
+                                                <Icone slot="compositor.modelo" textoPadrao="IA" />
                                             </button>
                                             {cfgAberta && (
                                                 <>
@@ -1616,78 +1589,42 @@ export default function Chat({ aoGastar }: { aoGastar?: () => void }) {
                                         </span>
                                     )}
 
-                                    <span className={`mic-grupo ${maosLivres ? "maos-livres-ativo" : ""}`}>
-                                        <button
-                                            className={`icone-mic-rec ${gravando ? "gravando" : ""}`}
-                                            disabled={respondendoVoz || maosLivres}
-                                            title={maosLivres ? "Desligue o modo voz pra gravar assim" : gravando ? "Solte para enviar" : "Segure para gravar sua pergunta"}
-                                            onPointerDown={(e) => { e.preventDefault(); void iniciarGravacao() }}
-                                            onPointerUp={pararGravacao}
-                                            onPointerLeave={() => { if (gravando) pararGravacao() }}
-                                            onPointerCancel={() => { if (gravando) pararGravacao() }}
-                                        >
-                                            {maosLivres
-                                                ? (gravando ? `⏹ ${gravSeg}s` : respondendoVoz ? "🎧…" : ouvindo ? "🎙️ ouvindo" : "🎙️")
-                                                : (respondendoVoz ? "…" : gravando ? `⏹ ${gravSeg}s` : "🎤")}
-                                        </button>
-                                        <span className="popup-anchor">
-                                            <button className="icone-mic-chevron" onClick={abrirPopupVoz} title="Voz e microfone">
-                                                <span className="chevron">⌄</span>
-                                            </button>
-                                            {vozAberta && (
-                                                <>
-                                                    <div className="popup-backdrop" onClick={() => setVozAberta(false)} />
-                                                    <PopupVoz mic={mic} onVerificar={async () => setMic(await checarMicrofone(true))}
-                                                        maosLivres={maosLivres} onAlternarMaosLivres={alternarMaosLivres} />
-                                                </>
-                                            )}
-                                        </span>
-                                    </span>
+                                    {/* [167]: o chevron que abria o diagnóstico de microfone (popup à
+                                        parte, `PopupVoz`) saiu — o Tutor IA já não tem isso desde o
+                                        [159]. Segurar pra gravar continua igual, só virou 1 pill ícone-só
+                                        em vez de metade de um grupo de 2 botões colados. */}
+                                    <button
+                                        className={`pill icone-so icone-mic-rec ${gravando ? "gravando" : ""}`}
+                                        disabled={respondendoVoz || maosLivres}
+                                        title={maosLivres ? "Desligue o modo voz pra gravar assim" : gravando ? "Solte para enviar" : "Segure para gravar sua pergunta"}
+                                        onPointerDown={(e) => { e.preventDefault(); void iniciarGravacao() }}
+                                        onPointerUp={pararGravacao}
+                                        onPointerLeave={() => { if (gravando) pararGravacao() }}
+                                        onPointerCancel={() => { if (gravando) pararGravacao() }}
+                                    >
+                                        {maosLivres
+                                            ? (gravando ? `⏹ ${gravSeg}s` : respondendoVoz ? "🎧" : ouvindo ? "🎙️" : "🎙️")
+                                            : (respondendoVoz ? "…" : gravando ? `⏹ ${gravSeg}s` : "🎤")}
+                                    </button>
 
-                                    <button className="chat-enviar" disabled={enviando || !texto.trim()} onClick={() => mandar(texto)}>
-                                        {enviando ? "…" : "Enviar ▸"}
+                                    <button className="btn-enviar" disabled={enviando || !texto.trim()} onClick={() => mandar(texto)} title="Enviar">
+                                        <Icone slot="compositor.enviar" textoPadrao="Enviar ▸" />
                                     </button>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Escolha da questão: do lado da IA, embaixo do campo de mensagem —
-                            não mais no painel de configurações à esquerda. */}
-                        {questoes.length > 0 && (
-                            <div className="chat-questao-picker">
-                                {conversa?.modo_questao === "random" ? (
-                                    <button disabled={enviando} onClick={questaoAleatoria} style={{ width: "100%" }}>
-                                        🎲 Questão aleatória
-                                    </button>
-                                ) : (
-                                    <label>Questão em estudo
-                                        <select value={qid} onChange={(e) => setQid(e.target.value === "" ? "" : Number(e.target.value))}>
-                                            <option value="">— escolher —</option>
-                                            {questoes.map((q) => (
-                                                <option key={q.id} value={q.id}>
-                                                    Q{examIdsConversa.length > 1 ? `${q.examId}.${q.numero}` : q.numero} · {q.disciplina}{q.tem_figura ? " 🖼" : ""}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                )}
-                                {emFoco && (
-                                    <div className="chat-foco">
-                                        <p className="chat-foco-enun">{semHtml(emFoco.pergunta || emFoco.enunciado).slice(0, 150) || "(sem enunciado)"}…</p>
-                                        {emFoco.tem_figura && <p className="chat-foco-fig">🖼 tem figura — a IA de imagem lê</p>}
-                                        <p className="chat-foco-status">
-                                            {respostaFoco ? `✓ você respondeu ${respostaFoco} — veja os recursos no botão 🎓` : "Abra o botão 🎓 e toque em \"Ler questão\" para ver o enunciado e responder."}
-                                        </p>
-                                    </div>
-                                )}
-                                {passoAPassoAberto && emFoco && (
-                                    <PassoAPassoPlayer qid={emFoco.id} respondida={respostaFoco} onFechar={() => setPassoAPassoAberto(false)} />
-                                )}
-                            </div>
+                        {/* [167]: o seletor de questão (+ prévia) foi pro drawer, em
+                            "Configurações e recursos" — só o player ativo (quando o
+                            aluno pede passo a passo narrado) continua aqui na conversa. */}
+                        {passoAPassoAberto && emFoco && (
+                            <PassoAPassoPlayer qid={emFoco.id} respondida={respostaFoco} onFechar={() => setPassoAPassoAberto(false)} />
                         )}
                     </>
                 )}
-            </section>
+                    </section>
+                </div>
+            </div>
         </div>
     )
 }

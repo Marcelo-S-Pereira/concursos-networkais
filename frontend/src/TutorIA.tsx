@@ -36,7 +36,15 @@ function fmtProgresso(decorridoS: number, totalS: number | null): string {
  * enviados entram na Biblioteca do admin, com a autoria do usuário, e já
  * ficam disponíveis pra escolher (e, se enviados dentro de uma conversa
  * ativa, já entram na seleção dela automaticamente). */
-export default function TutorIA({ aoGastar }: { aoGastar?: () => void; modo: "celular" | "computador" }) {
+export default function TutorIA({ aoGastar, modo }: { aoGastar?: () => void; modo: "celular" | "computador" }) {
+    /** [167]: painel de conversas virou drawer — aberto por padrão no
+     * computador (como assistentes de IA desktop), fechado no celular (precisa
+     * tocar o ícone no topo da conversa pra abrir). */
+    const [painelAberto, setPainelAberto] = useState(modo === "computador")
+    function fecharPainel() {
+        setPainelAberto(false)
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    }
     const [conversas, setConversas] = useState<Conversa[]>([])
     const [ativa, setAtiva] = useState<number | null>(null)
     const [msgs, setMsgs] = useState<ChatMsg[]>([])
@@ -668,7 +676,18 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void; modo: "ce
 
     return (
         <div className="chat">
-            <aside className="chat-painel">
+            <div className="chat-card">
+                {/* [167]: ícone que abre/fecha o drawer de conversas — só
+                    existe aqui dentro do chat, como no assistentes de IA. */}
+                <div className="chat-cab">
+                    <button onClick={() => (painelAberto ? fecharPainel() : setPainelAberto(true))} aria-label="Conversas">
+                        <Icone slot="chat.painel_toggle" textoPadrao="☰" />
+                    </button>
+                    {conversa && <span className="chat-cab-titulo">{conversa.titulo}</span>}
+                </div>
+                <div className="chat-body">
+            {painelAberto && <div className="chat-painel-backdrop" onClick={fecharPainel} />}
+            <aside className={`chat-painel ${painelAberto ? "aberto" : ""}`} aria-hidden={!painelAberto}>
                 <div className="chat-box" style={{ gridRow: "1 / 3" }}>
                     <div className="chat-box-cab"><h4>Tutor IA</h4> <Feedback ferramenta="tutor_ia" /></div>
                     <div className="chat-box-corpo">
@@ -708,7 +727,8 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void; modo: "ce
                         )}
                         {conversas.map((c) => (
                             <div key={c.id}>
-                                <div className={`chat-conv ${c.id === ativa ? "ativa" : ""}`} onClick={() => abrirConversa(c.id)}>
+                                <div className={`chat-conv ${c.id === ativa ? "ativa" : ""}`}
+                                    onClick={() => { abrirConversa(c.id); if (modo === "celular") fecharPainel() }}>
                                     <span className="chat-conv-titulo">{c.titulo}</span>
                                     {/* [157]: a escolha de RAG saiu de cima do compositor — agora mora
                                         na edição da própria conversa, aqui na lista, não mais flutuando
@@ -794,9 +814,9 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void; modo: "ce
                         </div>
                     </div>
                 </div>
-            </aside>
+                    </aside>
 
-            <section className="chat-thread">
+                    <section className="chat-thread">
                 {ativa == null ? (
                     <div className="chat-abertura">
                         <h3>Tutor IA</h3>
@@ -964,7 +984,9 @@ export default function TutorIA({ aoGastar }: { aoGastar?: () => void; modo: "ce
                         <audio ref={audioRef} hidden />
                     </>
                 )}
-            </section>
+                    </section>
+                </div>
+            </div>
         </div>
     )
 }

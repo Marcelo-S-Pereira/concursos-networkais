@@ -460,7 +460,7 @@ button.ia:hover { background: #5b21b6; }
 .hierarquia.mestre { background: var(--texto); color: var(--cartao); border-color: var(--texto); }
 .perfil-dados { display: grid; gap: 4px; font-size: .88rem; margin-top: 4px; }
 .perfil-dados .rot { color: var(--suave); display: inline-block; min-width: 80px; }
-.painel-admin { margin-top: 16px; display: grid; gap: 10px; }
+.painel-admin { margin-top: 16px; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
 .painel-admin h3 { margin: 0; }
 .futuro { opacity: .85; }
 .saude { display: grid; gap: 8px; }
@@ -643,12 +643,63 @@ img.icone-custom { width: 18px; height: 18px; object-fit: contain; }
 .tela-chat { padding-bottom: 16px; }
 .tela-chat.modo-computador { max-width: 1680px; }
 
-.chat { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px;
+.chat { position: relative; display: flex; flex-direction: column;
         height: calc(100vh - 190px); min-height: 520px; }
 
-/* Coluna da esquerda dividida em duas metades, cada uma rolando sozinha:
-   em cima o que é configurável/exploração; embaixo as conversas. */
-.chat-painel { display: grid; grid-template-rows: 1fr 1fr; gap: 12px; min-height: 0; }
+/* [165]: no celular, `.chat` tinha `height:auto` e `.chat-thread` só
+   `min-height` (sem teto) — sem altura travada em lugar nenhum, a PÁGINA
+   INTEIRA crescia com as mensagens (compositor deslizando cada vez mais
+   pra baixo), em vez de um chat de verdade (área de mensagens rolando por
+   dentro, compositor sempre fixo embaixo da tela). Corrigido travando a
+   altura pelo VIEWPORT (não por `.chat`/`.topo`, que ficam fora daqui) —
+   `.tela.tela-chat` vira coluna flex de `100dvh` (`dvh` — altura dinâmica
+   real do navegador mobile, não `vh` que ignora a barra de endereço
+   escondendo/aparecendo); cabeçalho e aviso de senha mantêm a altura
+   natural (`flex-shrink:0`, nunca espremidos); `.chat` vira o único item
+   que cresce (`flex:1`) até preencher o que sobrou. [167]: `.chat-painel`
+   virou drawer (dentro de `.chat-body`, ver abaixo), então `.chat-card` é
+   o único filho de verdade dentro de `.chat` agora — sem mais split de
+   linhas de grid pra dividir espaço com ele. */
+.modo-celular.tela-chat { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
+.modo-celular.tela-chat > .topo, .modo-celular.tela-chat > .aviso-senha { flex-shrink: 0; }
+.modo-celular.tela-chat .chat { flex: 1; min-height: 0; height: auto; }
+
+/* [167]: card único (borda/fundo/cantos arredondados — antes era o
+   `.chat-thread`) com DUAS partes empilhadas: `.chat-cab` (ícone que
+   abre/fecha o drawer + título, SEMPRE visível, nunca coberto — é por
+   isso que fica FORA de `.chat-body`, não por cima do drawer) e
+   `.chat-body` (onde o drawer de conversas se sobrepõe, só ali — nunca
+   sobre o cabeçalho). Achado testando (Chromium headless): pôr o drawer
+   `position:absolute` direto dentro de `.chat` cobria o próprio botão que
+   fecha ele quando aberto no computador (drawer e cabeçalho competiam pelo
+   mesmo `top:0`) — corrigido dando ao cabeçalho seu próprio espaço em
+   fluxo normal, ACIMA de onde o drawer começa. */
+.chat-card { flex: 1; min-height: 0; border: 1px solid var(--borda); border-radius: 12px;
+             background: var(--cartao); overflow: hidden; display: flex; flex-direction: column; }
+.chat-cab { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+            border-bottom: 1px solid var(--borda); }
+.chat-cab button { background: none; border: none; padding: 6px; border-radius: 8px;
+                    cursor: pointer; color: var(--suave); display: flex; align-items: center; }
+.chat-cab button:hover { background: var(--fundo); color: var(--texto); }
+.chat-cab-titulo { font-size: .88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Drawer de conversas — escondido por padrão no celular, aberto por padrão
+   no computador, sempre togglável pelo ícone no cabeçalho (mesmo padrão de
+   assistentes de IA). `position:absolute` dentro de
+   `.chat-body` (que é `position:relative`), então nunca disputa espaço em
+   fluxo com `.chat-thread`, que ocupa a largura toda por baixo dele. Duas
+   metades (config em cima, conversas embaixo), cada uma rolando sozinha,
+   como já era. */
+.chat-body { flex: 1; min-height: 0; position: relative; display: flex; }
+.chat-painel-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.35); z-index: 20; }
+.chat-painel {
+    position: absolute; top: 0; left: 0; bottom: 0; width: min(300px, 88%);
+    background: var(--cartao); border-right: 1px solid var(--borda);
+    box-shadow: 3px 0 20px rgba(0,0,0,.2); z-index: 21; padding: 10px;
+    display: grid; grid-template-rows: 1fr 1fr; gap: 12px;
+    transform: translateX(-105%); transition: transform .2s ease;
+}
+.chat-painel.aberto { transform: translateX(0); }
 .chat-box { border: 1px solid var(--borda); border-radius: 12px; background: var(--cartao);
             display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .chat-box-cab { display: flex; align-items: center; gap: 8px; padding: 9px 12px;
@@ -708,9 +759,9 @@ img.icone-custom { width: 18px; height: 18px; object-fit: contain; }
 .chat-ritmo.apertado { color: var(--falha); font-weight: 600; }
 .chat-ritmo.livre { font-style: italic; }
 
-/* A conversa: só mensagens e compositor */
-.chat-thread { border: 1px solid var(--borda); border-radius: 12px; display: flex; flex-direction: column;
-               overflow: hidden; background: var(--cartao); min-height: 0; }
+/* A conversa em si: mensagens + compositor — o cabeçalho (toggle + título)
+   é `.chat-cab`, acima, fora daqui (nunca coberto pelo drawer). */
+.chat-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat-msgs { flex: 1; min-height: 0; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .chat-abertura { margin: auto; max-width: 460px; text-align: center; color: var(--suave); }
 .chat-abertura h3 { margin: 0 0 6px; color: var(--texto); }
@@ -751,14 +802,18 @@ img.icone-custom { width: 18px; height: 18px; object-fit: contain; }
 /* [157]: fileira de controles do Tutor IA — desceu pra depois do Enviar, pra
    deixar o textarea livre (era isso que crescia colado em cima dele antes). */
 .chat-botoes-baixo { margin-top: 8px; }
-.chat-botoes-baixo .pill.icone-so { padding: 7px 10px; min-width: 34px; justify-content: center; }
+/* [167]: `icone-so`/`icone-destaque` generalizados (antes só valiam dentro de
+   `.chat-botoes-baixo`, só usada pelo Tutor IA) — o Chat de estudo passou a
+   usar o MESMO padrão de pill ícone-só (IA, Modo voz), então a regra precisa
+   valer em qualquer `.chat-botoes`, não só na do Tutor IA. */
+.pill.icone-so { padding: 7px 10px; min-width: 34px; justify-content: center; }
 /* [159]: "Tempo real" é o mais importante do grupo — colado no Enviar,
    maior e em preto e branco de verdade (não o cinza-suave que `.pill` usa
    por padrão pros outros ícones) — `var(--texto)` já é preto no claro e
    branco no escuro, então continua "preto e branco" nos dois temas em vez
    de travar numa cor só que sumiria no escuro. (`width`/`height` do SVG são
    atributos de apresentação, CSS de classe sobrepõe sem tocar em Icone.tsx.) */
-.chat-botoes-baixo .pill.icone-destaque { padding: 10px 16px; color: var(--texto); }
+.pill.icone-destaque { padding: 10px 16px; color: var(--texto); }
 .icone-destaque .icone-custom-wrap, .icone-destaque .icone-custom { width: 30px; height: 30px; }
 /* [159]: Enviar também virou ícone — redondo, mantendo os 44px de alvo de
    toque (`button{min-height:44px}` já garantia isso pro texto; aqui só
@@ -808,21 +863,14 @@ img.icone-custom { width: 18px; height: 18px; object-fit: contain; }
 .pill { min-height: 0; padding: 5px 10px; border-radius: 20px; background: transparent; border: 1px solid var(--borda);
         color: var(--suave); font-size: .78rem; display: inline-flex; align-items: center; gap: 5px; max-width: 220px; }
 .pill:hover { color: var(--texto); border-color: var(--texto); }
-.pill-modelo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chevron { font-size: .7rem; }
 
-/* Microfone: gravar (aperta e segura) + chevron separado (abre o diagnóstico
-   de microfone). Dois botões colados, não um só — segurar pra gravar não pode
-   também abrir popup. */
-.mic-grupo { display: inline-flex; align-items: stretch; border-radius: 20px; border: 1px solid var(--borda);
-             overflow: hidden; }
-.icone-mic-rec { min-height: 0; padding: 5px 10px; background: transparent; border: none; border-right: 1px solid var(--borda);
-                 color: var(--suave); font-size: .82rem; display: inline-flex; align-items: center; gap: 4px;
-                 touch-action: none; user-select: none; }
-.icone-mic-rec:hover:not(:disabled) { color: var(--texto); }
+/* [167]: microfone virou 1 pill ícone-só, igual IA/Modo voz — o chevron que
+   abria o diagnóstico de microfone (popup à parte) saiu; segurar pra gravar
+   continua funcionando igual, só a apresentação que ficou consistente com o
+   resto do compositor. `touch-action:none`/`user-select:none` continuam
+   essenciais (gesto de apertar-e-segurar). */
+.icone-mic-rec { touch-action: none; user-select: none; }
 .icone-mic-rec.gravando { background: var(--falha); color: #fff; animation: pulsar-grav 1s ease-in-out infinite; }
-.icone-mic-chevron { min-height: 0; padding: 5px 7px; background: transparent; border: none; color: var(--suave); }
-.icone-mic-chevron:hover { color: var(--texto); }
 @keyframes pulsar-grav { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
 /* [109]: botão de falar do Tutor IA — mesma pulsação do aperta-e-segura do Chat. */
 .chat-botoes button.gravando { background: var(--falha); color: #fff; animation: pulsar-grav 1s ease-in-out infinite; }
@@ -835,7 +883,6 @@ img.icone-custom { width: 18px; height: 18px; object-fit: contain; }
 .voz-grande:hover:not(:disabled) { border-color: var(--texto); }
 .voz-grande.gravando { background: var(--falha); color: #fff; border-style: solid; animation: pulsar-grav 1s ease-in-out infinite; }
 .voz-grande:disabled { opacity: .65; }
-.mic-grupo.maos-livres-ativo { border-color: var(--texto); }
 .maos-livres-tarja { width: 100%; margin: 0 0 8px; padding: 8px 12px; border-radius: 10px; border: 1px dashed var(--borda);
                      background: var(--fundo); color: var(--suave); font-size: .8rem; text-align: center; }
 
@@ -876,18 +923,14 @@ img.icone-custom { width: 18px; height: 18px; object-fit: contain; }
 .popup-ok { margin: 2px 8px; font-size: .8rem; color: var(--suave); }
 .check { color: var(--ok); font-weight: 700; }
 
-/* Estreito: empilha. Pela CLASSE do modo (o container é que encolhe, não a
-   janela) E pela janela real, no celular de verdade. */
-.modo-celular .chat, .tela.larga .chat { grid-template-columns: minmax(0, 1fr); height: auto; }
-.modo-celular .chat-painel { grid-template-rows: auto auto; }
-.modo-celular .chat-box-corpo { max-height: 210px; }
-.modo-celular .chat-thread { min-height: 60vh; }
-@media (max-width: 780px) {
-    .chat { grid-template-columns: minmax(0, 1fr); height: auto; }
-    .chat-painel { grid-template-rows: auto auto; }
-    .chat-box-corpo { max-height: 210px; }
-    .chat-thread { min-height: 60vh; }
-}
+/* [167]: `.chat` não é mais grid (virou flex-column, ver acima) — as
+   regras que existiam só pra empilhar `.chat-painel`+`.chat-thread` no
+   celular (`grid-template-columns`/`grid-template-rows`, [165]/[166])
+   saíram: o painel virou drawer, sempre `position:absolute`, nunca disputa
+   espaço com o thread no fluxo — e por ter altura real (`top:0;bottom:0`
+   dentro de `.chat`), o antigo teto artificial de 210px na caixa de
+   conversas também deixou de ser necessário nos dois dispositivos. */
+.modo-celular .chat { height: auto; }
 
 /* Responder com uma mão só (trem, barra segurada) — botão pra trocar o lado +
    cluster de respostas A-E colado nesse lado. Ancorados no PRÓPRIO
@@ -1038,3 +1081,17 @@ img.icone-custom { width: 18px; height: 18px; object-fit: contain; }
 .cartao-acesso { max-width: 420px; margin: 0 auto; }
 .landing-footer { text-align: center; color: var(--suave); font-size: .85rem; padding: 20px; }
 .landing-footer a { color: inherit; }
+
+/* [170] Uso de IA por ferramenta e por usuário (painel do admin) */
+.tabela-uso-rolagem { overflow-x: auto; }
+.tabela-uso { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.tabela-uso th, .tabela-uso td { padding: 6px 8px; border-bottom: 1px solid var(--borda); text-align: right; white-space: nowrap; }
+.tabela-uso th:first-child, .tabela-uso td:first-child { text-align: left; white-space: normal; }
+.tabela-uso th { font-weight: 600; color: var(--suave); }
+.uso-usuario { border: 1px solid var(--borda); border-radius: 8px; padding: 6px 10px; background: var(--fundo); }
+.uso-usuario summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.uso-usuario summary .uso-quem { font-weight: 600; }
+.uso-usuario summary .uso-soma { margin-left: auto; color: var(--suave); font-size: .82rem; }
+.selo-livre { font-size: .68rem; border: 1px solid var(--borda); border-radius: 999px; padding: 1px 7px; color: var(--suave); }
+.uso-filtro { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tabela-uso th.col-uso, .tabela-uso td.col-uso { white-space: normal; text-align: left; min-width: 190px; }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { api, type AdminOverview, type CreditosResumo, type EstadoHoje, type FilaEstado, type FilaHistoricoLinha, type LimitesConfig, type Orcamento, type RecursoCatalogo, type ResumoSemana, type SaudeVPS, type Usuario, type UsuarioAdmin } from "./api"
 import CampoSecreto from "./CampoSecreto"
+import CardUso from "./UsoPorUsuario"
 
 const HIERARQUIA: Record<string, string> = {
     superadmin: "Administrador mestre",
@@ -177,6 +178,7 @@ export default function Perfil({
                     </div>
 
                     <CardOrcamento />
+                    <CardUso />
                     <CardLimites />
                     <CardFila />
                     <ConcederCredito aoConcluir={aoRecarregarCreditos} />
