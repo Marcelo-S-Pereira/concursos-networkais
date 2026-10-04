@@ -25,7 +25,7 @@ def test_sem_chave_erro_claro(db):
 
 
 def test_salvar_apagar_e_mascara(db):
-    youtube.salvar_chave(db, "[GOOGLE_API_KEY_REMOVIDA]")
+    youtube.salvar_chave(db, "youtube-chave-ficticia-1234")
     assert youtube.configurada(db) is True
     assert youtube.chave_mascarada(db) == "****1234"
     youtube.apagar_chave(db)

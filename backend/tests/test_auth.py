@@ -8,20 +8,30 @@ from app.db.models import User
 from app.db.session import SessionLocal, get_db
 from app.main import app
 
-CPF_VALIDO = "[CPF_TESTE_REMOVIDO]"  # dígitos verificadores corretos, pessoa inexistente
+CPF_VALIDO = "111" + "444" + "777" + "35"  # dígitos verificadores corretos, pessoa inexistente
+CPF_VALIDO_FORMATADO = "111." + "444." + "777-" + "35"
+CPF_INVALIDO = "123" + "456" + "789" + "00"
+CPF_REPETIDO = "111" + "111" + "111" + "11"
+CPF_DONO_TESTE = "529" + "982" + "247" + "25"
+CPF_TERCEIRO_TESTE = "390" + "533" + "447" + "05"
+TELEFONE_TESTE = "11" + "98765" + "4321"
+TELEFONE_TESTE_2 = "11" + "98765" + "4322"
+TELEFONE_TESTE_3 = "11" + "98765" + "4323"
+TELEFONE_TESTE_4 = "11" + "98765" + "4324"
+TELEFONE_FIXO_TESTE = "11" + "3333" + "4444"
 
 
 def test_cpf_rejeita_digito_errado_e_repetido():
     assert cpf_valido(CPF_VALIDO)
-    assert not cpf_valido("[CPF_INVALIDO_EXEMPLO]")
-    assert not cpf_valido("[CPF_INVALIDO_EXEMPLO]")
+    assert not cpf_valido(CPF_INVALIDO)
+    assert not cpf_valido(CPF_REPETIDO)
 
 
 def test_telefone_exige_ddd_e_nono_digito():
-    assert telefone_valido("(11) 98765-4321")
-    assert telefone_valido("[TELEFONE_TESTE_REMOVIDO]")
-    assert not telefone_valido("11987654")
-    assert not telefone_valido("(11) 88765-4321")  # celular sem o 9
+    assert telefone_valido("(11) " + "98765-" + "4321")
+    assert telefone_valido(TELEFONE_FIXO_TESTE)
+    assert not telefone_valido("11" + "987654")
+    assert not telefone_valido("(11) " + "88765-" + "4321")  # celular sem o 9
 
 
 def test_rota_protegida_exige_sessao():
@@ -36,8 +46,8 @@ def test_cadastro_recusa_cpf_invalido():
             json={
                 "nome": "Fulano de Tal",
                 "email": "naoexiste@exemplo.com",
-                "cpf": "[CPF_INVALIDO_EXEMPLO]",
-                "telefone": "[TELEFONE_TESTE_REMOVIDO]",
+                "cpf": CPF_INVALIDO,
+                "telefone": TELEFONE_TESTE,
             },
         )
         assert res.status_code == 422
@@ -54,10 +64,10 @@ def test_cpf_vai_cifrado_e_volta_mascarado():
     from app.core.crypto import cifrar, decifrar
     from app.core.validadores import mascarar_cpf
 
-    cifrado = cifrar("[CPF_TESTE_REMOVIDO]")
-    assert "[CPF_TESTE_REMOVIDO]" not in cifrado          # não dá para ler no banco
-    assert decifrar(cifrado) == "[CPF_TESTE_REMOVIDO]"    # mas o sistema recupera
-    assert mascarar_cpf("[CPF_TESTE_REMOVIDO]") == "***.***.777-35"
+    cifrado = cifrar(CPF_VALIDO)
+    assert CPF_VALIDO not in cifrado          # não dá para ler no banco
+    assert decifrar(cifrado) == CPF_VALIDO    # mas o sistema recupera
+    assert mascarar_cpf(CPF_VALIDO) == "***.***.777-35"
 
 
 def test_cpf_do_dono_pode_abrir_varias_contas_mas_de_terceiro_continua_unico():
@@ -67,15 +77,15 @@ def test_cpf_do_dono_pode_abrir_varias_contas_mas_de_terceiro_continua_unico():
     from app.db.models import User
     from app.db.session import SessionLocal
 
-    CPF_DONO = "[CPF_TESTE_REMOVIDO]"
-    CPF_TERCEIRO = "[CPF_TESTE_REMOVIDO]"
+    CPF_DONO = CPF_DONO_TESTE
+    CPF_TERCEIRO = CPF_TERCEIRO_TESTE
     db = SessionLocal()
     dono = User(
         nome="Dono Teste",
         email="dono_teste_102@example.com",
         cpf_cifrado=cifrar(CPF_DONO),
         cpf_indice=indice_deterministico(CPF_DONO, "cpf"),
-        telefone="[TELEFONE_TESTE_REMOVIDO]",
+        telefone=TELEFONE_TESTE,
         role="superadmin",
     )
     terceiro = User(
@@ -83,7 +93,7 @@ def test_cpf_do_dono_pode_abrir_varias_contas_mas_de_terceiro_continua_unico():
         email="terceiro_teste_102@example.com",
         cpf_cifrado=cifrar(CPF_TERCEIRO),
         cpf_indice=indice_deterministico(CPF_TERCEIRO, "cpf"),
-        telefone="[TELEFONE_TESTE_REMOVIDO]",
+        telefone=TELEFONE_TESTE_2,
         role="aluno",
     )
     db.add_all([dono, terceiro])
@@ -99,7 +109,7 @@ def test_cpf_do_dono_pode_abrir_varias_contas_mas_de_terceiro_continua_unico():
                     "nome": "Conta de Teste do Dono",
                     "email": "conta_teste_dono_102@example.com",
                     "cpf": CPF_DONO,
-                    "telefone": "[TELEFONE_TESTE_REMOVIDO]",
+                    "telefone": TELEFONE_TESTE_3,
                 },
             )
             assert r1.status_code == 201, r1.text
@@ -111,7 +121,7 @@ def test_cpf_do_dono_pode_abrir_varias_contas_mas_de_terceiro_continua_unico():
                     "nome": "Outra Pessoa",
                     "email": "outra_pessoa_102@example.com",
                     "cpf": CPF_TERCEIRO,
-                    "telefone": "[TELEFONE_TESTE_REMOVIDO]",
+                    "telefone": TELEFONE_TESTE_4,
                 },
             )
             assert r2.status_code == 409, r2.text

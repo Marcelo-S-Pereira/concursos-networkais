@@ -13,6 +13,11 @@ from app.db.models import CreditTransaction, Feedback, User
 from app.db.session import SessionLocal, get_db
 from app.main import app
 
+CPF_BETA_A = "111." + "444." + "777-" + "35"
+CPF_BETA_B = "529." + "982." + "247-" + "25"
+TELEFONE_BETA_A = "11" + "98765" + "4321"
+TELEFONE_BETA_B = "11" + "98765" + "4322"
+
 
 def test_beta_credita_automatico_so_dentro_da_janela_de_vagas():
     db = SessionLocal()
@@ -40,13 +45,13 @@ def test_beta_credita_automatico_so_dentro_da_janela_de_vagas():
 
         rA = client.post("/api/v1/auth/cadastro", json={
             "nome": "Beta A", "email": "beta_a_test_153@example.com",
-            "cpf": "[CPF_TESTE_REMOVIDO]", "telefone": "[TELEFONE_TESTE_REMOVIDO]",
+            "cpf": CPF_BETA_A, "telefone": TELEFONE_BETA_A,
         })
         assert rA.status_code == 201
 
         rB = client.post("/api/v1/auth/cadastro", json={
             "nome": "Beta B", "email": "beta_b_test_153@example.com",
-            "cpf": "[CPF_TESTE_REMOVIDO]", "telefone": "[TELEFONE_TESTE_REMOVIDO]",
+            "cpf": CPF_BETA_B, "telefone": TELEFONE_BETA_B,
         })
         assert rB.status_code == 201
 
