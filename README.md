@@ -28,6 +28,21 @@ estudo.
 7. No perfil administrativo, cadastre plataformas de IA, modelos, prompts,
    documentos de apoio, créditos, permissões e regras de uso.
 
+## Demonstração Visual
+
+As imagens abaixo mostram telas demonstrativas da aplicação, sem dados reais de
+usuários, credenciais ou informações sensíveis.
+
+![Chat de estudo](frontend/public/landing/chat-estudo.png)
+
+![Simulado com cartão-resposta](frontend/public/landing/simulado.png)
+
+![Tutor IA com biblioteca de conhecimento](frontend/public/landing/tutor-ia.png)
+
+<video src="frontend/public/landing/demo.webm" controls width="100%">
+  Demonstração em vídeo da interface do APP Concursos.
+</video>
+
 ## Lógica Do Projeto
 
 O projeto separa a experiência do estudante da operação administrativa. O
